@@ -10,7 +10,7 @@ import {
 } from "./helpers.js";
 import {
   installChatGptNetworkHooks,
-  waitForChatGptConversationNetwork,
+  waitForChatGptComplete,
 } from "./chatgpt-network.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -31,16 +31,21 @@ const STOP_SELECTORS = [
   'button[aria-label*="Dừng"]',
 ];
 
-async function isStopButtonVisible(page: Page): Promise<boolean> {
-  for (const sel of STOP_SELECTORS) {
+const GENERATING_SELECTORS = [
+  ...STOP_SELECTORS,
+  '[data-testid="stop-button"]',
+  `${ASSISTANT_MESSAGE} [class*="result-streaming"]`,
+  `${ASSISTANT_MESSAGE} .animate-pulse`,
+];
+
+async function isUiGenerating(page: Page): Promise<boolean> {
+  for (const sel of GENERATING_SELECTORS) {
     if (await page.locator(sel).first().isVisible().catch(() => false)) {
       return true;
     }
   }
   return false;
 }
-
-const INTERIM_TEXT = /^thinking[\s.…]*$/i;
 
 async function getLastAssistantText(page: Page): Promise<string> {
   const content = page.locator(ASSISTANT_CONTENT).last();
@@ -55,41 +60,13 @@ async function getLastAssistantText(page: Page): Promise<string> {
 function isInterimResponse(text: string): boolean {
   const t = text.trim();
   if (!t) return true;
-  if (INTERIM_TEXT.test(t)) return true;
+  if (/^thinking[\s.…]*$/i.test(t)) return true;
   if (/^thought for\b/i.test(t)) return true;
   if (/^đang suy nghĩ/i.test(t)) return true;
   if (/^analyzing[\s.…]*$/i.test(t)) return true;
+  // Reasoning summary without body yet (e.g. "Thought for 12 seconds")
+  if (/^thought for .+ seconds?\.?$/i.test(t)) return true;
   return false;
-}
-
-/** Read DOM after network stream finished; retry while UI still shows interim labels. */
-async function readAssistantTextAfterNetwork(
-  page: Page,
-  timeoutMs: number,
-): Promise<string> {
-  const deadline = Date.now() + Math.min(timeoutMs, 30_000);
-
-  while (Date.now() < deadline) {
-    if (await isStopButtonVisible(page)) {
-      await sleep(300);
-      continue;
-    }
-    const text = await getLastAssistantText(page);
-    if (text && !isInterimResponse(text)) {
-      return text;
-    }
-    await sleep(300);
-  }
-
-  const fallback = await getLastAssistantText(page);
-  if (fallback && !isInterimResponse(fallback)) {
-    return fallback;
-  }
-
-  throw new AiRouterError(
-    "TIMEOUT",
-    "ChatGPT network finished but assistant message never appeared in the UI",
-  );
 }
 
 export const chatgptAdapter: ProviderAdapter = {
@@ -142,7 +119,7 @@ export const chatgptAdapter: ProviderAdapter = {
         }
       }
 
-      await waitForChatGptConversationNetwork(
+      return await waitForChatGptComplete(
         page,
         options.timeoutMs,
         async () => {
@@ -155,9 +132,12 @@ export const chatgptAdapter: ProviderAdapter = {
           );
           await page.keyboard.press("Enter");
         },
+        {
+          isUiGenerating: () => isUiGenerating(page),
+          readAssistantText: () => getLastAssistantText(page),
+          isInterimText: isInterimResponse,
+        },
       );
-
-      return await readAssistantTextAfterNetwork(page, options.timeoutMs);
     } catch (err) {
       if (err instanceof AiRouterError) throw err;
       const debugDir = join(homedir(), ".ai-router", "debug");
