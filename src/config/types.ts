@@ -22,7 +22,7 @@ export interface AiRouterConfig {
   browser: {
     fingerprint_seed: string;
     humanize: boolean;
-    /** Headless breaks session reuse on ChatGPT/Gemini — keep false unless testing */
+    /** Headless for ask + session_status (no window). Login always opens a visible browser. */
     headless: boolean;
     /** fill = one-shot DOM set (default); type = human-like keystrokes */
     prompt_input_mode: "fill" | "type";

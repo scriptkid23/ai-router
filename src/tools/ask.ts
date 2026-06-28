@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import type { AiRouterConfig } from "../config/types.js";
 import { browserManager } from "../browser/manager.js";
+import { isHeadlessAutomation } from "../browser/headless.js";
 import { getAdapter } from "../adapters/registry.js";
 import { resolveProvider } from "../router/resolve-provider.js";
 import { AiRouterError } from "../errors.js";
@@ -42,7 +43,7 @@ export async function handleAsk(
 
   return browserManager.withLock(async () => {
     const context = await browserManager.launchContext(config, {
-      headless: config.browser.headless ?? false,
+      headless: isHeadlessAutomation(config),
     });
     try {
       const page = context.pages()[0] ?? (await context.newPage());

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import type { AiRouterConfig } from "../config/types.js";
 import { browserManager } from "../browser/manager.js";
+import { isHeadlessAutomation } from "../browser/headless.js";
 import { getAdapter, getProviderIds } from "../adapters/registry.js";
 import { AiRouterError } from "../errors.js";
 
@@ -21,8 +22,9 @@ export async function handleSessionStatus(
   }
 
   return browserManager.withLock(async () => {
-    // Headless mode makes ChatGPT/Gemini show a login wall even with valid cookies.
-    const context = await browserManager.launchContext(config, { headless: false });
+    const context = await browserManager.launchContext(config, {
+      headless: isHeadlessAutomation(config),
+    });
     try {
       const page = context.pages()[0] ?? (await context.newPage());
       const sessions = [];
