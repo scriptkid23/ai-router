@@ -31,8 +31,6 @@ const FETCH_PATCH_SOURCE = `
     state.inFlight++;
     try {
       const response = await originalFetch(input, init);
-      // Return immediately so ChatGPT UI can consume the stream.
-      // Track completion in background when the SSE body finishes.
       void response.clone().text().finally(() => {
         state.inFlight--;
         state.completed++;
@@ -53,40 +51,29 @@ export function isChatGptConversationResponse(
   return method.toUpperCase() === "POST" && CONVERSATION_URL_RE.test(url);
 }
 
-/** Patch fetch in-page so we see SSE stream completion, not just UI "Thinking". */
 export async function installChatGptNetworkHooks(page: Page): Promise<void> {
   await page.addInitScript(FETCH_PATCH_SOURCE);
   await page.evaluate(FETCH_PATCH_SOURCE);
 }
 
-async function readInjectedNetworkState(page: Page): Promise<{
-  inFlight: number;
-  completed: number;
-}> {
-  return page.evaluate(() => ({
-    inFlight: window.__aiRouterChatGpt?.inFlight ?? 0,
-    completed: window.__aiRouterChatGpt?.completed ?? 0,
-  }));
+export interface ChatGptNetworkTracker {
+  baselineCompleted: number;
+  isBusy(): Promise<boolean>;
+  hasActivity(): Promise<boolean>;
+  dispose(): void;
 }
 
-/**
- * Wait until ChatGPT conversation POST stream(s) finish — Playwright response
- * listener + injected fetch hook (no arbitrary 2s DOM stable guess).
- */
-export async function waitForChatGptConversationNetwork(
-  page: Page,
-  timeoutMs: number,
-  submit: () => Promise<void>,
-): Promise<void> {
+/** Track conversation POST streams via Playwright + injected fetch (no fixed quiet window). */
+export function attachChatGptNetworkTracker(page: Page): ChatGptNetworkTracker {
   let playwrightInFlight = 0;
   let playwrightCompleted = 0;
+  let baselineCompleted = 0;
 
   const onResponse = (response: PwResponse): void => {
     const request = response.request();
     if (!isChatGptConversationResponse(response.url(), request.method())) {
       return;
     }
-
     playwrightInFlight++;
     void response.finished().finally(() => {
       playwrightInFlight--;
@@ -96,40 +83,89 @@ export async function waitForChatGptConversationNetwork(
 
   page.on("response", onResponse);
 
-  const baseline = await readInjectedNetworkState(page);
+  void page
+    .evaluate(() => window.__aiRouterChatGpt?.completed ?? 0)
+    .then((n) => {
+      baselineCompleted = n;
+    });
+
+  return {
+    baselineCompleted,
+    async isBusy(): Promise<boolean> {
+      const injected = await page.evaluate(() => ({
+        inFlight: window.__aiRouterChatGpt?.inFlight ?? 0,
+      }));
+      return playwrightInFlight > 0 || injected.inFlight > 0;
+    },
+    async hasActivity(): Promise<boolean> {
+      const injected = await page.evaluate(() => ({
+        completed: window.__aiRouterChatGpt?.completed ?? 0,
+      }));
+      return (
+        playwrightCompleted > 0 ||
+        injected.completed > baselineCompleted
+      );
+    },
+    dispose(): void {
+      page.off("response", onResponse);
+    },
+  };
+}
+
+const POLL_MS = 200;
+
+export interface ChatGptCompletionSignals {
+  isUiGenerating: () => Promise<boolean>;
+  readAssistantText: () => Promise<string>;
+  isInterimText: (text: string) => boolean;
+}
+
+/**
+ * Wait until ChatGPT is truly done — all streams finished, stop hidden, real answer in DOM.
+ * No hardcoded "stable for N seconds"; long thinking/reasoning runs until timeout_ms.
+ */
+export async function waitForChatGptComplete(
+  page: Page,
+  timeoutMs: number,
+  submit: () => Promise<void>,
+  signals: ChatGptCompletionSignals,
+): Promise<string> {
+  const tracker = attachChatGptNetworkTracker(page);
 
   try {
     await submit();
 
     const deadline = Date.now() + timeoutMs;
-    let quietSince = 0;
 
     while (Date.now() < deadline) {
-      const injected = await readInjectedNetworkState(page);
-      const newInjected = injected.completed - baseline.completed;
-      const networkIdle =
-        playwrightInFlight === 0 &&
-        injected.inFlight === 0 &&
-        (playwrightCompleted > 0 || newInjected > 0);
+      const networkBusy = await tracker.isBusy();
+      const uiGenerating = await signals.isUiGenerating();
+      const text = await signals.readAssistantText();
+      const hasFinalAnswer = Boolean(text && !signals.isInterimText(text));
+      const sawStream = await tracker.hasActivity();
 
-      if (networkIdle) {
-        if (quietSince === 0) {
-          quietSince = Date.now();
-        } else if (Date.now() - quietSince >= 2500) {
-          return;
+      if (sawStream && !networkBusy && !uiGenerating && hasFinalAnswer) {
+        await sleep(POLL_MS);
+        const confirm = await signals.readAssistantText();
+        if (
+          confirm === text &&
+          confirm &&
+          !signals.isInterimText(confirm) &&
+          !(await tracker.isBusy()) &&
+          !(await signals.isUiGenerating())
+        ) {
+          return confirm;
         }
-      } else {
-        quietSince = 0;
       }
 
-      await sleep(150);
+      await sleep(POLL_MS);
     }
 
     throw new AiRouterError(
       "TIMEOUT",
-      "ChatGPT conversation network stream did not finish before timeout",
+      `ChatGPT did not finish within ${timeoutMs}ms (network/UI still active or no final answer)`,
     );
   } finally {
-    page.off("response", onResponse);
+    tracker.dispose();
   }
 }
