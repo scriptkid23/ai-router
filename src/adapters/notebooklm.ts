@@ -7,8 +7,8 @@ import { join } from "node:path";
 const BASE_URL = "https://notebooklm.google.com";
 const LOGIN_HINT = "accounts.google.com";
 const NOTEBOOK_LINK = 'a[href*="/notebook/"]';
-const CHAT_INPUT = 'textarea, div[contenteditable="true"]';
-const CHAT_RESPONSE = ".markdown, [class*='response'], [class*='message']";
+const CHAT_INPUT = "textarea.query-box-input";
+const CHAT_RESPONSE = ".to-user-container .message-text-content";
 
 export const notebooklmAdapter: ProviderAdapter = {
   id: "notebooklm",
