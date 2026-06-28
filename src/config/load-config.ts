@@ -88,6 +88,11 @@ export function loadConfig(configDir?: string): AiRouterConfig {
   if (process.env.AI_ROUTER_HOST) {
     config.server.host = process.env.AI_ROUTER_HOST;
   }
+  if (process.env.AI_ROUTER_HEADLESS !== undefined) {
+    config.browser.headless =
+      process.env.AI_ROUTER_HEADLESS === "1" ||
+      process.env.AI_ROUTER_HEADLESS.toLowerCase() === "true";
+  }
 
   return config;
 }
