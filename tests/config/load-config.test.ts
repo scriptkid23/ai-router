@@ -20,7 +20,7 @@ describe("loadConfig", () => {
   it("returns defaults when config file missing", () => {
     const config = loadConfig(dir);
     expect(config.defaultProvider).toBe("chatgpt");
-    expect(config.server.port).toBe(8088);
+    expect(config.server.port).toBe(8087);
     expect(config.profileDir).toContain(".ai-router");
   });
 
@@ -31,7 +31,7 @@ describe("loadConfig", () => {
     );
     const config = loadConfig(dir);
     expect(config.defaultProvider).toBe("gemini");
-    expect(config.server.port).toBe(8088);
+    expect(config.server.port).toBe(8087);
   });
 
   it("applies env overrides", () => {
