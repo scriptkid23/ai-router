@@ -7,7 +7,7 @@ export function defaultConfig(): AiRouterConfig {
   return {
     server: {
       host: "127.0.0.1",
-      port: 8088,
+      port: 8087,
       path: "/mcp/sse",
       messagesPath: "/mcp/messages",
     },

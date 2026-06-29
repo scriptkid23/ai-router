@@ -20,9 +20,9 @@ npm run build
 npm run serve
 ```
 
-Server listens at `http://127.0.0.1:8088/mcp/sse`.
+Server listens at `http://127.0.0.1:8087/mcp/sse`.
 
-Health check: `curl http://127.0.0.1:8088/health`
+Health check: `curl http://127.0.0.1:8087/health`
 
 ## Cursor MCP configuration
 
@@ -33,7 +33,7 @@ Add to your Cursor MCP settings:
   "mcpServers": {
     "ai-router": {
       "command": "npx",
-      "args": ["-y", "mcp-remote@latest", "http://127.0.0.1:8088/mcp/sse"]
+      "args": ["-y", "mcp-remote@latest", "http://127.0.0.1:8087/mcp/sse"]
     }
   }
 }
@@ -76,7 +76,7 @@ Config file: `~/.ai-router/config.json` (auto-created on first run with defaults
 {
   "server": {
     "host": "127.0.0.1",
-    "port": 8088,
+    "port": 8087,
     "path": "/mcp/sse",
     "messagesPath": "/mcp/messages"
   },
@@ -115,7 +115,7 @@ Only include keys you want to override — missing keys keep defaults.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `server.host` | `127.0.0.1` | MCP server bind address (localhost only) |
-| `server.port` | `8088` | MCP server port |
+| `server.port` | `8087` | MCP server port |
 | `server.path` | `/mcp/sse` | SSE endpoint for `mcp-remote` |
 | `defaultProvider` | `chatgpt` | Provider when prompt has no keyword match |
 | `profileDir` | `~/.ai-router/profile` | CloakBrowser persistent profile (cookies) |
