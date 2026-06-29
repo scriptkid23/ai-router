@@ -33,7 +33,6 @@ const STOP_SELECTORS = [
 
 const GENERATING_SELECTORS = [
   ...STOP_SELECTORS,
-  '[data-testid="stop-button"]',
   `${ASSISTANT_MESSAGE} [class*="result-streaming"]`,
   `${ASSISTANT_MESSAGE} .animate-pulse`,
 ];
@@ -100,9 +99,8 @@ export const chatgptAdapter: ProviderAdapter = {
   async ask(page, prompt, options) {
     try {
       await installChatGptNetworkHooks(page);
-      await page.goto(URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
-      await sleep(2000);
 
+      // checkSession navigates to URL and waits, so no separate goto is needed.
       const session = await chatgptAdapter.checkSession(page);
       if (session === "logged_out") {
         throw new AiRouterError(
@@ -137,14 +135,17 @@ export const chatgptAdapter: ProviderAdapter = {
           readAssistantText: () => getLastAssistantText(page),
           isInterimText: isInterimResponse,
         },
+        options.signal,
       );
     } catch (err) {
       if (err instanceof AiRouterError) throw err;
       const debugDir = join(homedir(), ".ai-router", "debug");
       const shot = await saveDebugArtifacts(page, debugDir).catch(() => "unknown");
+      const reason = err instanceof Error ? err.message : String(err);
       throw new AiRouterError(
         "ADAPTER_ERROR",
-        `ChatGPT adapter failed. Screenshot: ${shot}`,
+        `ChatGPT adapter failed: ${reason}. Screenshot: ${shot}`,
+        { cause: err },
       );
     }
   },

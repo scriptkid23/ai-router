@@ -52,8 +52,9 @@ export function isChatGptConversationResponse(
 }
 
 export async function installChatGptNetworkHooks(page: Page): Promise<void> {
+  // addInitScript runs on every navigation; the caller always navigates after
+  // installing, so the patch is active before the conversation starts.
   await page.addInitScript(FETCH_PATCH_SOURCE);
-  await page.evaluate(FETCH_PATCH_SOURCE);
 }
 
 export interface ChatGptNetworkTracker {
@@ -129,15 +130,23 @@ export async function waitForChatGptComplete(
   timeoutMs: number,
   submit: () => Promise<void>,
   signals: ChatGptCompletionSignals,
+  signal?: AbortSignal,
 ): Promise<string> {
   const tracker = attachChatGptNetworkTracker(page);
+  const throwIfAborted = (): void => {
+    if (signal?.aborted) {
+      throw new AiRouterError("ABORTED", "ChatGPT request was cancelled");
+    }
+  };
 
   try {
+    throwIfAborted();
     await submit();
 
     const deadline = Date.now() + timeoutMs;
 
     while (Date.now() < deadline) {
+      throwIfAborted();
       const networkBusy = await tracker.isBusy();
       const uiGenerating = await signals.isUiGenerating();
       const text = await signals.readAssistantText();
