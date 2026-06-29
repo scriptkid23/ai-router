@@ -32,7 +32,7 @@ export function defaultConfig(): AiRouterConfig {
     browser: {
       fingerprint_seed: "42069",
       humanize: true,
-      headless: true,
+      headless: false,
       prompt_input_mode: "fill",
       type_delay_ms: 20,
     },

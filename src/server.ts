@@ -7,7 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { loadConfig } from "./config/load-config.js";
 import { registerTools } from "./mcp/register-tools.js";
-import { log } from "./logger.js";
+import { getSessionLogPath, log } from "./logger.js";
 
 function readBody(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -86,4 +86,9 @@ export async function startServer(): Promise<void> {
   log("info", "MCP SSE server listening", {
     url: `http://${config.server.host}:${config.server.port}${config.server.path}`,
   });
+
+  const sessionLog = getSessionLogPath();
+  if (sessionLog) {
+    log("info", "session log file", { path: sessionLog });
+  }
 }
