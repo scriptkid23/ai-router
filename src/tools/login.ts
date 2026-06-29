@@ -41,9 +41,7 @@ export async function handleLogin(
       }
 
       log("info", "login browser open — log in to each tab, then close the browser window");
-      // No timeout: login is a manual step, wait until the user closes the window.
-      // (Playwright's default waitForEvent timeout is 30s, which would cut login short.)
-      await context.waitForEvent("close", { timeout: 0 });
+      await context.waitForEvent("close");
 
       const duration_ms = Date.now() - started;
       log("info", "login complete", { duration_ms });

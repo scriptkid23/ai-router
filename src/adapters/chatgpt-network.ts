@@ -1,5 +1,6 @@
 import type { Page, Response as PwResponse } from "playwright-core";
 import { AiRouterError } from "../errors.js";
+import { log } from "../logger.js";
 import { sleep } from "./helpers.js";
 
 declare global {
@@ -57,10 +58,18 @@ export async function installChatGptNetworkHooks(page: Page): Promise<void> {
   await page.addInitScript(FETCH_PATCH_SOURCE);
 }
 
+export interface ChatGptNetworkSnapshot {
+  pwInFlight: number;
+  pwCompleted: number;
+  baseline: number;
+  injInFlight: number;
+  injCompleted: number;
+}
+
 export interface ChatGptNetworkTracker {
-  baselineCompleted: number;
   isBusy(): Promise<boolean>;
   hasActivity(): Promise<boolean>;
+  snapshot(): Promise<ChatGptNetworkSnapshot>;
   dispose(): void;
 }
 
@@ -91,7 +100,6 @@ export function attachChatGptNetworkTracker(page: Page): ChatGptNetworkTracker {
     });
 
   return {
-    baselineCompleted,
     async isBusy(): Promise<boolean> {
       const injected = await page.evaluate(() => ({
         inFlight: window.__aiRouterChatGpt?.inFlight ?? 0,
@@ -106,6 +114,19 @@ export function attachChatGptNetworkTracker(page: Page): ChatGptNetworkTracker {
         playwrightCompleted > 0 ||
         injected.completed > baselineCompleted
       );
+    },
+    async snapshot(): Promise<ChatGptNetworkSnapshot> {
+      const injected = await page.evaluate(() => ({
+        inFlight: window.__aiRouterChatGpt?.inFlight ?? 0,
+        completed: window.__aiRouterChatGpt?.completed ?? 0,
+      }));
+      return {
+        pwInFlight: playwrightInFlight,
+        pwCompleted: playwrightCompleted,
+        baseline: baselineCompleted,
+        injInFlight: injected.inFlight,
+        injCompleted: injected.completed,
+      };
     },
     dispose(): void {
       page.off("response", onResponse);
@@ -144,6 +165,7 @@ export async function waitForChatGptComplete(
     await submit();
 
     const deadline = Date.now() + timeoutMs;
+    let lastLog = 0;
 
     while (Date.now() < deadline) {
       throwIfAborted();
@@ -152,6 +174,19 @@ export async function waitForChatGptComplete(
       const text = await signals.readAssistantText();
       const hasFinalAnswer = Boolean(text && !signals.isInterimText(text));
       const sawStream = await tracker.hasActivity();
+
+      const now = Date.now();
+      if (now - lastLog >= 2000) {
+        lastLog = now;
+        log("debug", "chatgpt wait", {
+          networkBusy,
+          uiGenerating,
+          hasFinalAnswer,
+          sawStream,
+          textLen: text.length,
+          ...(await tracker.snapshot()),
+        });
+      }
 
       if (sawStream && !networkBusy && !uiGenerating && hasFinalAnswer) {
         await sleep(POLL_MS);
@@ -170,6 +205,17 @@ export async function waitForChatGptComplete(
       await sleep(POLL_MS);
     }
 
+    // Always emit the final signal state so a timeout shows WHICH gate was stuck.
+    const finalText = await signals.readAssistantText();
+    log("warn", "chatgpt timeout — final signal state", {
+      networkBusy: await tracker.isBusy(),
+      uiGenerating: await signals.isUiGenerating(),
+      hasFinalAnswer: Boolean(finalText && !signals.isInterimText(finalText)),
+      sawStream: await tracker.hasActivity(),
+      textLen: finalText.length,
+      textPreview: finalText.slice(0, 80),
+      ...(await tracker.snapshot()),
+    });
     throw new AiRouterError(
       "TIMEOUT",
       `ChatGPT did not finish within ${timeoutMs}ms (network/UI still active or no final answer)`,
