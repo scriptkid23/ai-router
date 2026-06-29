@@ -5,14 +5,15 @@ export type ErrorCode =
   | "SESSION_EXPIRED"
   | "PROVIDER_NOT_FOUND"
   | "TIMEOUT"
+  | "ABORTED"
   | "ADAPTER_ERROR"
   | "PROMPT_EMPTY";
 
 export class AiRouterError extends Error {
   readonly code: ErrorCode;
 
-  constructor(code: ErrorCode, message: string) {
-    super(`[${code}] ${message}`);
+  constructor(code: ErrorCode, message: string, options?: { cause?: unknown }) {
+    super(`[${code}] ${message}`, options);
     this.name = "AiRouterError";
     this.code = code;
   }
