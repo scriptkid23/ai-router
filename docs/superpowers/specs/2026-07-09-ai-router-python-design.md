@@ -1,7 +1,7 @@
 # ai-router Python MCP Design
 
 **Date:** 2026-07-09  
-**Status:** Draft — pending user review  
+**Status:** Approved  
 **Branch:** `python`  
 **Project:** ai-router — Python rewrite: MCP server routing prompts to web AI providers via CloakBrowser
 
