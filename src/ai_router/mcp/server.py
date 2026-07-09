@@ -2,6 +2,7 @@ from mcp.server.fastmcp import Context, FastMCP
 
 from ai_router.config import load_config
 from ai_router.errors import AiRouterError
+from ai_router.logger import configure
 from ai_router.mcp.tools import (
     create_app_state,
     handle_ask,
@@ -9,6 +10,7 @@ from ai_router.mcp.tools import (
     handle_session_status,
 )
 
+configure()
 _state = create_app_state()
 
 

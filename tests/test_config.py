@@ -22,3 +22,12 @@ def test_env_override_port(monkeypatch):
     monkeypatch.setenv("AI_ROUTER_PORT", "9090")
     cfg = load_config()
     assert cfg.port == 9090
+
+
+def test_browser_queue_defaults():
+    cfg = load_config()
+    assert cfg.idle_streak_required == 6
+    assert cfg.generating_streak_required == 2
+    assert cfg.answer_stable_ticks == 4
+    assert cfg.dom_tick_interval_ms == 500
+    assert cfg.max_pages == 10
