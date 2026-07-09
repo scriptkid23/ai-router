@@ -2,11 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from playwright.async_api import Error as PlaywrightError
+
 from ai_router.adapters.base import SessionStatus
 from ai_router.adapters.registry import ProviderRegistry, build_registry
 from ai_router.browser.manager import BrowserManager
 from ai_router.config import AppConfig, load_config
-from ai_router.errors import AiRouterError, NotLoggedInError, ProviderNotReadyError
+from ai_router.errors import (
+    AiRouterError,
+    BrowserClosedError,
+    NotLoggedInError,
+    ProviderNotReadyError,
+)
 from ai_router.router.resolve import resolve_provider
 from ai_router.session.manager import SessionManager
 
@@ -21,12 +28,13 @@ class AppState:
 
 def create_app_state(config: AppConfig | None = None) -> AppState:
     cfg = config or load_config()
+    sessions = SessionManager()
     browser = BrowserManager(cfg)
     return AppState(
         config=cfg,
         registry=build_registry(),
         browser=browser,
-        sessions=SessionManager(browser),
+        sessions=sessions,
     )
 
 
@@ -46,17 +54,29 @@ async def handle_ask(
     if adapter.status == "coming_soon":
         raise ProviderNotReadyError(adapter.id)
 
-    async with state.browser.acquire() as ctx:
-        session = await state.sessions.get_or_create(mcp_session_id, adapter, ctx)
-        status = await adapter.check_session(session.page)
-        if status == SessionStatus.LOGGED_OUT:
-            raise NotLoggedInError()
-        answer = await adapter.ask(
-            session.page,
-            prompt,
-            timeout_s=state.config.answer_timeout_s,
-        )
-        state.sessions.record_message(mcp_session_id)
+    async with state.browser.acquire():
+        try:
+            session = await state.sessions.get_or_create(mcp_session_id, adapter, state.browser)
+            preserve_chat = session.message_count > 0 or session.chat_url is not None
+            if hasattr(adapter, "ensure_page_ready"):
+                status = await adapter.ensure_page_ready(session.page, preserve_chat=preserve_chat)
+            else:
+                status = await adapter.check_session(session.page)
+            if status == SessionStatus.LOGGED_OUT:
+                raise NotLoggedInError()
+            answer = await adapter.ask(
+                session.page,
+                prompt,
+                timeout_s=state.config.answer_timeout_s,
+            )
+            state.sessions.record_message(
+                mcp_session_id,
+                page_url=session.page.url,
+            )
+        except PlaywrightError as exc:
+            if "closed" in str(exc).lower():
+                raise BrowserClosedError() from exc
+            raise AiRouterError("ADAPTER_ERROR", str(exc)) from exc
 
     return {
         "answer": answer,
@@ -79,8 +99,8 @@ async def handle_session_status(
     *,
     provider: str | None,
 ) -> dict:
-    async with state.browser.acquire() as ctx:
-        page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+    async with state.browser.acquire():
+        page = await state.browser.new_page()
         targets = (
             [state.registry.get(provider)]
             if provider

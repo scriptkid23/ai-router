@@ -8,6 +8,12 @@ SEL_PROMPT_INPUT = (
 )
 SEL_RESPONSE_BLOCK = "model-response, .model-response-text, message-content"
 SEL_GENERATING = 'button[aria-label*="Stop"], button[aria-label*="Dừng"]'
+SEL_SUBMIT_BUTTON = (
+    'button[aria-label*="Send" i]:not([aria-label*="Stop" i]), '
+    'button[aria-label*="Gửi" i]:not([aria-label*="Dừng" i]), '
+    'button[aria-label*="send message" i], '
+    'button.send-button'
+)
 SEL_SIGN_IN = (
     'a[href*="accounts.google.com/ServiceLogin"], '
     'a[href*="accounts.google.com/signin"]'
