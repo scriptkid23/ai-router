@@ -29,7 +29,7 @@ Verify the CLI:
 poetry run ai --help
 ```
 
-On first browser launch, CloakBrowser downloads a stealth Chromium binary (~200 MB) to `~/.cloakbrowser/`. You do **not** need to run `playwright install`.
+On first browser launch, CloakBrowser downloads a stealth Chromium binary (~200 MB) to `~/.cloakbrowser/`. Requires **cloakbrowser ≥ 0.4.4** (Windows/Linux/macOS). You do **not** need to run `playwright install`.
 
 ### 2. Login to Gemini (one-time)
 
@@ -140,7 +140,7 @@ Environment variable overrides:
 |---------|-----|
 | `gemini: logged_out` | Run `poetry run ai browser login` again |
 | Cursor cannot connect | Ensure `ai serve` is running and the URL port matches |
-| Browser does not open | Install Chrome; wait for CloakBrowser binary download on first run |
+| Browser does not open | Requires `cloakbrowser` ≥ 0.4.4 (Windows needs 0.4.x, not 0.1.x). Run `poetry update cloakbrowser` |
 | `BROWSER_BUSY` | Wait for the current `ask` to finish (one request at a time) |
 | `NOT_LOGGED_IN` from `ask` | Run `poetry run ai browser login` |
 
