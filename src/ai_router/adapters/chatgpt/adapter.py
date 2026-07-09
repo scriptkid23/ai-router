@@ -17,6 +17,3 @@ class ChatGPTAdapter:
 
     async def open_new_chat(self, page: Page) -> None:
         raise ProviderNotReadyError(self.id)
-
-    async def ask(self, page: Page, prompt: str, *, timeout_s: int) -> str:
-        raise ProviderNotReadyError(self.id)

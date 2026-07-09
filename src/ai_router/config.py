@@ -22,6 +22,11 @@ class AppConfig:
     host: str
     port: int
     answer_timeout_s: int
+    idle_streak_required: int = 6
+    generating_streak_required: int = 2
+    answer_stable_ticks: int = 4
+    dom_tick_interval_ms: int = 500
+    max_pages: int = 10
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
 
 
@@ -71,5 +76,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         cfg.port = int(v)
     if v := os.getenv("AI_ROUTER_ANSWER_TIMEOUT_S"):
         cfg.answer_timeout_s = int(v)
+    if v := os.getenv("AI_ROUTER_IDLE_STREAK_REQUIRED"):
+        cfg.idle_streak_required = int(v)
 
     return cfg
