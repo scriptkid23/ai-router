@@ -8,7 +8,9 @@ from typing import Any, Literal
 from playwright.async_api import Page
 
 from ai_router.adapters.gemini.selectors import (
+    SEL_GENERATING,
     SEL_PROMPT_INPUT,
+    SEL_SEND_CONTAINER,
     SEL_SUBMIT_BUTTON,
 )
 from ai_router.adapters.gemini.wait import is_rate_limited, read_response_snapshot
@@ -128,25 +130,71 @@ class CommandExecutor:
         await asyncio.sleep(0.2)
 
     async def _submit(self) -> None:
-        submit = self._page.locator(SEL_SUBMIT_BUTTON).last
-        await submit.wait_for(state="visible", timeout=5000)
-        disabled = True
+        clicked = await self._try_send_click()
+        if clicked and await self._wait_generating_started(3.0):
+            return
+
+        trace(
+            "submit_retry",
+            page_id=self._page_id,
+            job_id=self._job_id,
+            attempt=2,
+            method="enter",
+        )
+        await self._try_enter_submit()
+        if await self._wait_generating_started(3.0):
+            return
+
+        trace(
+            "submit_retry",
+            page_id=self._page_id,
+            job_id=self._job_id,
+            attempt=3,
+            method="click",
+        )
+        await self._try_send_click()
+
+    async def _send_button_ready(self) -> bool:
+        container = self._page.locator(SEL_SEND_CONTAINER).last
+        if await container.count() == 0:
+            return False
+        wrapper = container.locator("gem-icon-button.send-button.submit").first
+        if await wrapper.count() > 0:
+            return await wrapper.get_attribute("aria-disabled") != "true"
+        submit = container.locator('button[aria-label="Send message"]').first
+        if await submit.count() == 0:
+            return False
+        return not await submit.is_disabled()
+
+    async def _try_send_click(self) -> bool:
+        container = self._page.locator(SEL_SEND_CONTAINER).last
+        try:
+            await container.wait_for(state="visible", timeout=5000)
+        except Exception:
+            trace(
+                "submit_no_container",
+                page_id=self._page_id,
+                job_id=self._job_id,
+            )
+            return False
+
+        submit = container.locator('button[aria-label="Send message"]').first
+        if await submit.count() == 0:
+            submit = self._page.locator(SEL_SUBMIT_BUTTON).last
+
         for _ in range(50):
-            disabled = await submit.is_disabled()
-            if not disabled:
+            if await self._send_button_ready():
                 break
             await asyncio.sleep(0.1)
-        if disabled:
+        else:
             trace(
                 "submit_disabled",
                 page_id=self._page_id,
                 job_id=self._job_id,
-                action="enter_fallback",
+                action="not_ready",
             )
-            box = self._page.locator(SEL_PROMPT_INPUT).first
-            await box.click()
-            await self._page.keyboard.press("Enter")
-            return
+            return False
+
         await submit.click()
         trace(
             "submit_click",
@@ -154,18 +202,43 @@ class CommandExecutor:
             job_id=self._job_id,
             disabled=False,
         )
+        return True
 
-    async def _wait_generating(self) -> None:
-        deadline = time.monotonic() + 15
+    async def _try_enter_submit(self) -> None:
+        box = self._page.locator(SEL_PROMPT_INPUT).first
+        await box.click()
+        await self._page.keyboard.press("Enter")
+        trace(
+            "submit_enter",
+            page_id=self._page_id,
+            job_id=self._job_id,
+        )
+
+    async def _wait_generating_started(self, timeout_s: float) -> bool:
+        deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
-            if self._reducer.state.saw_generating_this_job:
-                return
+            if await self._generating_started():
+                return True
             if self._reducer.state.phase == "error":
                 raise AiRouterError(
                     "GEMINI_ERROR",
                     self._reducer.state.error_text or "Gemini error",
                 )
             await asyncio.sleep(0.1)
+        return False
+
+    async def _generating_started(self) -> bool:
+        if self._reducer.state.saw_generating_this_job:
+            return True
+        if self._reducer.state.saw_stream_end_this_job:
+            return True
+        if self._reducer.state.last_stream_at is not None:
+            return True
+        return await self._page.locator(SEL_GENERATING).count() > 0
+
+    async def _wait_generating(self) -> None:
+        if await self._wait_generating_started(12.0):
+            return
         raise AiRouterError("SUBMIT_FAILED", "Send click did not start generation")
 
     async def _wait_answer(self, *, before_count: int) -> str:

@@ -8,9 +8,13 @@ from typing import Any, Literal
 
 from playwright.async_api import Page
 
+from ai_router.adapters.gemini.selectors import STREAM_GENERATE_RE
+from ai_router.adapters.gemini.wait import is_stream_end
+
 BrowserEventKind = Literal[
     "request_finished",
     "response",
+    "stream_end",
     "framenavigated",
     "console",
     "pageerror",
@@ -56,11 +60,26 @@ def attach_listeners(page: Page, channel: EventChannel) -> None:
     def on_request_finished(request) -> None:
         loop.create_task(channel.emit("request_finished", url=request.url))
 
+    async def inspect_stream_response(response) -> None:
+        if not STREAM_GENERATE_RE.search(response.url):
+            return
+        try:
+            await response.finished()
+            body = await response.text()
+        except Exception:
+            return
+        if is_stream_end(body):
+            await channel.emit("stream_end", url=response.url)
+
+    def on_response(response) -> None:
+        loop.create_task(inspect_stream_response(response))
+
     def on_framenavigated(frame) -> None:
         if frame == page.main_frame:
             loop.create_task(channel.emit("framenavigated", url=frame.url))
 
     page.on("requestfinished", on_request_finished)
+    page.on("response", on_response)
     page.on("framenavigated", on_framenavigated)
 
 

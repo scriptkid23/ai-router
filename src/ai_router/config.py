@@ -25,6 +25,7 @@ class AppConfig:
     idle_streak_required: int = 6
     generating_streak_required: int = 2
     answer_stable_ticks: int = 4
+    stream_quiet_s: float = 1.5
     dom_tick_interval_ms: int = 500
     max_pages: int = 10
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
