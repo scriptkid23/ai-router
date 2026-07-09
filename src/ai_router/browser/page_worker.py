@@ -6,8 +6,8 @@ import time
 from playwright.async_api import Page
 
 from ai_router.adapters.gemini.planner import GeminiPlanner
-from ai_router.adapters.gemini.selectors import GEMINI_ERROR_MARKERS, SEL_GENERATING
-from ai_router.adapters.gemini.wait import read_response_snapshot
+from ai_router.adapters.gemini.selectors import GEMINI_ERROR_MARKERS
+from ai_router.adapters.gemini.wait import is_stop_visible, read_response_snapshot
 from ai_router.browser.commands import CommandExecutor
 from ai_router.browser.events import (
     EventChannel,
@@ -123,7 +123,7 @@ class PageWorker:
                 )
 
     async def _dom_snapshot(self, page: Page) -> dict:
-        generating = await page.locator(SEL_GENERATING).count() > 0
+        generating = await is_stop_visible(page)
         count, text = await read_response_snapshot(page)
         body = ""
         try:
@@ -142,21 +142,44 @@ class PageWorker:
             "error_text": err,
         }
 
+    async def _stop_visible(self) -> bool:
+        return await is_stop_visible(self._page)
+
+    def _stream_settled(self, *, stop_visible: bool) -> bool:
+        st = self._reducer.state
+        if st.stream_ended_at is None:
+            return not stop_visible
+        since_end = time.time() - st.stream_ended_at
+        return since_end >= self._cfg.stream_quiet_s and not stop_visible
+
     async def _wait_idle_gate(self) -> None:
         last_log = 0.0
         while True:
             st = self._reducer.state
-            if st.phase == "idle" and st.idle_streak >= self._cfg.idle_streak_required:
+            stop_visible = await self._stop_visible()
+            stream_ok = self._stream_settled(stop_visible=stop_visible)
+            idle_ok = (
+                st.phase == "idle"
+                and st.idle_streak >= self._cfg.idle_streak_required
+                and stream_ok
+            )
+            if idle_ok:
                 trace(
                     "idle_gate_open",
                     page_id=self._page_id,
                     idle_streak=st.idle_streak,
                     queue_depth=self._queue.depth(),
                     running_job_id=self._running_job_id,
+                    stop_visible=stop_visible,
                 )
                 return
             now = time.monotonic()
             if now - last_log >= 3.0:
+                since_end = (
+                    round(time.time() - st.stream_ended_at, 1)
+                    if st.stream_ended_at
+                    else None
+                )
                 trace(
                     "idle_gate_wait",
                     page_id=self._page_id,
@@ -165,6 +188,9 @@ class PageWorker:
                     idle_required=self._cfg.idle_streak_required,
                     queue_depth=self._queue.depth(),
                     running_job_id=self._running_job_id,
+                    stop_visible=stop_visible,
+                    stream_quiet_s=self._cfg.stream_quiet_s,
+                    since_stream_end_s=since_end,
                 )
                 last_log = now
             await asyncio.sleep(0.1)

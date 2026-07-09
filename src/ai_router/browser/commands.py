@@ -8,12 +8,15 @@ from typing import Any, Literal
 from playwright.async_api import Page
 
 from ai_router.adapters.gemini.selectors import (
-    SEL_GENERATING,
     SEL_PROMPT_INPUT,
     SEL_SEND_CONTAINER,
     SEL_SUBMIT_BUTTON,
 )
-from ai_router.adapters.gemini.wait import is_rate_limited, read_response_snapshot
+from ai_router.adapters.gemini.wait import (
+    is_rate_limited,
+    is_stop_visible,
+    read_response_snapshot,
+)
 from ai_router.browser.state import StateReducer
 from ai_router.errors import AiRouterError, RateLimitedError, TimeoutError_
 from ai_router.logger import trace
@@ -52,6 +55,8 @@ class CommandExecutor:
         self._page_id = page_id
         self._answer_timeout_s = answer_timeout_s
         self._idle_streak_required = idle_streak_required
+        self._last_prompt_len = 0
+        self._response_count_at_submit = 0
 
     async def run(self, commands: list[Command]) -> str:
         before_count, _ = await read_response_snapshot(self._page)
@@ -77,6 +82,9 @@ class CommandExecutor:
             elif cmd.op == "type":
                 await self._type(cmd.args["prompt"])
             elif cmd.op == "submit":
+                self._response_count_at_submit, _ = await read_response_snapshot(
+                    self._page
+                )
                 self._reducer.mark_submitting()
                 await self._submit()
             elif cmd.op == "wait_generating":
@@ -128,31 +136,61 @@ class CommandExecutor:
             }"""
         )
         await asyncio.sleep(0.2)
+        self._last_prompt_len = len(prompt)
+
+    async def _input_text(self) -> str:
+        box = self._page.locator(SEL_PROMPT_INPUT).first
+        return (await box.inner_text()).strip()
+
+    async def _verify_submitted(self) -> bool:
+        text = await self._input_text()
+        input_len = len(text)
+        stop_visible = await is_stop_visible(self._page)
+        st = self._reducer.state
+        stream_after_submit = (
+            st.submitted_at is not None
+            and st.last_stream_at is not None
+            and st.last_stream_at >= st.submitted_at
+        )
+        count, _ = await read_response_snapshot(self._page)
+        new_turn = count > self._response_count_at_submit
+        cleared = input_len < max(16, self._last_prompt_len // 5)
+        verified = cleared or new_turn or stream_after_submit
+        trace(
+            "submit_verify",
+            page_id=self._page_id,
+            job_id=self._job_id,
+            verified=verified,
+            input_len=input_len,
+            prompt_len=self._last_prompt_len,
+            stop_visible=stop_visible,
+            stream_after_submit=stream_after_submit,
+            new_turn=new_turn,
+            cleared=cleared,
+        )
+        return verified
 
     async def _submit(self) -> None:
-        clicked = await self._try_send_click()
-        if clicked and await self._wait_generating_started(3.0):
-            return
-
-        trace(
-            "submit_retry",
-            page_id=self._page_id,
-            job_id=self._job_id,
-            attempt=2,
-            method="enter",
+        for attempt, method in enumerate(("enter", "enter", "click"), start=1):
+            if attempt > 1:
+                trace(
+                    "submit_retry",
+                    page_id=self._page_id,
+                    job_id=self._job_id,
+                    attempt=attempt,
+                    method=method,
+                )
+            if method == "click":
+                await self._try_send_click()
+            else:
+                await self._try_enter_submit()
+            if await self._verify_submitted():
+                return
+            await asyncio.sleep(0.5)
+        raise AiRouterError(
+            "SUBMIT_FAILED",
+            "Prompt still in input after Send/Enter retries",
         )
-        await self._try_enter_submit()
-        if await self._wait_generating_started(3.0):
-            return
-
-        trace(
-            "submit_retry",
-            page_id=self._page_id,
-            job_id=self._job_id,
-            attempt=3,
-            method="click",
-        )
-        await self._try_send_click()
 
     async def _send_button_ready(self) -> bool:
         container = self._page.locator(SEL_SEND_CONTAINER).last
@@ -195,7 +233,7 @@ class CommandExecutor:
             )
             return False
 
-        await submit.click()
+        await submit.click(force=True)
         trace(
             "submit_click",
             page_id=self._page_id,
@@ -228,25 +266,35 @@ class CommandExecutor:
         return False
 
     async def _generating_started(self) -> bool:
-        if self._reducer.state.saw_generating_this_job:
+        st = self._reducer.state
+        if await is_stop_visible(self._page):
             return True
-        if self._reducer.state.saw_stream_end_this_job:
-            return True
-        if self._reducer.state.last_stream_at is not None:
-            return True
-        return await self._page.locator(SEL_GENERATING).count() > 0
+        if st.submitted_at is None:
+            return False
+        return (
+            st.last_stream_at is not None and st.last_stream_at >= st.submitted_at
+        )
 
     async def _wait_generating(self) -> None:
-        if await self._wait_generating_started(12.0):
+        if await self._wait_generating_started(15.0):
             return
-        raise AiRouterError("SUBMIT_FAILED", "Send click did not start generation")
+        input_len = len(await self._input_text())
+        raise AiRouterError(
+            "SUBMIT_FAILED",
+            f"Generation not started (input_len={input_len})",
+        )
 
     async def _wait_answer(self, *, before_count: int) -> str:
         deadline = time.monotonic() + self._answer_timeout_s
         last_log = 0.0
         while time.monotonic() < deadline:
-            checks = self._reducer.answer_ready_checks(before_count=before_count)
-            if all(checks.values()):
+            stop_visible = await is_stop_visible(self._page)
+            checks = self._reducer.answer_ready_checks(
+                before_count=before_count, generating=stop_visible
+            )
+            if self._reducer.answer_ready(
+                before_count=before_count, generating=stop_visible
+            ):
                 answer = self._reducer.state.last_response_text
                 if is_rate_limited(answer):
                     raise RateLimitedError(answer[:200])
@@ -280,6 +328,7 @@ class CommandExecutor:
                     stable_streak=st.response_stable_streak,
                     text_len=len(st.last_response_text),
                     dom_text_len=len(dom_text),
+                    stop_visible=stop_visible,
                     missing=",".join(missing) or "none",
                 )
                 last_log = now
@@ -305,9 +354,17 @@ class CommandExecutor:
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
             st = self._reducer.state
-            if st.phase == "idle" and st.idle_streak >= self._idle_streak_required:
+            stop_visible = await is_stop_visible(self._page)
+            if (
+                not stop_visible
+                and st.phase == "idle"
+                and st.idle_streak >= self._idle_streak_required
+            ):
                 return
             if st.phase == "error":
                 raise AiRouterError("GEMINI_ERROR", st.error_text or "Gemini error")
             await asyncio.sleep(0.1)
-        raise TimeoutError_("Timed out waiting for idle browser state")
+        stop_visible = await is_stop_visible(self._page)
+        raise TimeoutError_(
+            f"Timed out waiting for idle browser state (stop_visible={stop_visible})"
+        )

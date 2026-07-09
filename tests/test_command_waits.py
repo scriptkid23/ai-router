@@ -30,7 +30,7 @@ def test_answer_ready_after_full_cycle():
     assert r.answer_ready(before_count=0) is True
 
 
-def test_answer_ready_with_stream_end_while_stop_visible():
+def test_answer_not_ready_with_stream_end_while_stop_visible():
     r = StateReducer(
         page_id="test",
         idle_streak_required=6,
@@ -40,10 +40,39 @@ def test_answer_ready_with_stream_end_while_stop_visible():
         error_markers=(),
     )
     r.apply_dom_tick(generating=True, response_count=0, response_text="", error_text=None)
+    r.mark_submitting()
+    r.apply_request_finished(
+        "https://gemini.google.com/_/BardChatUi/data/"
+        "assistant.lamda.BardFrontendService/StreamGenerate"
+    )
     r.apply_stream_end()
     r.apply_dom_tick(generating=True, response_count=1, response_text="answer", error_text=None)
     r.apply_dom_tick(generating=True, response_count=1, response_text="answer", error_text=None)
-    checks = r.answer_ready_checks(before_count=0)
-    assert r.answer_ready(before_count=0) is True
+    checks = r.answer_ready_checks(before_count=0, generating=True)
+    assert r.answer_ready(before_count=0, generating=True) is False
+    assert checks["stream_end"] is True
+    assert checks["stream_quiet"] is False
+
+
+def test_answer_ready_after_stream_end_and_stop_gone():
+    r = StateReducer(
+        page_id="test",
+        idle_streak_required=6,
+        generating_streak_required=2,
+        answer_stable_ticks=2,
+        stream_quiet_s=0.0,
+        error_markers=(),
+    )
+    r.apply_dom_tick(generating=True, response_count=0, response_text="", error_text=None)
+    r.mark_submitting()
+    r.apply_request_finished(
+        "https://gemini.google.com/_/BardChatUi/data/"
+        "assistant.lamda.BardFrontendService/StreamGenerate"
+    )
+    r.apply_stream_end()
+    r.apply_dom_tick(generating=False, response_count=1, response_text="answer", error_text=None)
+    r.apply_dom_tick(generating=False, response_count=1, response_text="answer", error_text=None)
+    checks = r.answer_ready_checks(before_count=0, generating=False)
+    assert r.answer_ready(before_count=0, generating=False) is True
     assert checks["stream_end"] is True
     assert checks["stream_quiet"] is True
