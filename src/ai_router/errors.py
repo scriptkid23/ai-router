@@ -28,6 +28,15 @@ class BrowserBusyError(AiRouterError):
         super().__init__("BROWSER_BUSY", "Browser is busy with another request")
 
 
+class BrowserClosedError(AiRouterError):
+    def __init__(self):
+        super().__init__(
+            "BROWSER_CLOSED",
+            "Browser window was closed. Keep the headed browser open while ai serve is running, "
+            "or restart: poetry run ai serve",
+        )
+
+
 class TimeoutError_(AiRouterError):
     def __init__(self, message: str = "Answer did not arrive in time"):
         super().__init__("TIMEOUT", message)
