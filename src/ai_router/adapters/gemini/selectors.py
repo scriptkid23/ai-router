@@ -15,11 +15,15 @@ SEL_GENERATING = (
     'button[aria-label*="Dừng" i], '
     'button[aria-label*="stop response" i]'
 )
+SEL_SEND_CONTAINER = (
+    "div.send-button-container.visible, "
+    'div[data-test-id="send-button-container"].visible'
+)
 SEL_SUBMIT_BUTTON = (
-    'button[aria-label*="Send" i]:not([aria-label*="Stop" i]), '
-    'button[aria-label*="Gửi" i]:not([aria-label*="Dừng" i]), '
-    'button[aria-label*="send message" i], '
-    'button.send-button'
+    "div.send-button-container.visible button[aria-label='Send message'], "
+    'div[data-test-id="send-button-container"].visible button[aria-label="Send message"], '
+    'button[aria-label="Send message"]:not([aria-label*="Stop" i]), '
+    'button[aria-label*="Gửi" i]:not([aria-label*="Dừng" i])'
 )
 SEL_SIGN_IN = (
     'a[href*="accounts.google.com/ServiceLogin"], '

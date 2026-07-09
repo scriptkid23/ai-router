@@ -1,4 +1,4 @@
-from ai_router.adapters.gemini.wait import braces_balanced, is_rate_limited
+from ai_router.adapters.gemini.wait import braces_balanced, is_rate_limited, is_stream_end
 
 
 def test_braces_balanced_true():
@@ -23,3 +23,21 @@ def test_rate_limit_vietnamese():
 
 def test_rate_limit_negative():
     assert is_rate_limited("Here is a normal answer about Python") is False
+
+
+def test_stream_end_marker_detected():
+    body = """]
+]26[
+    [
+        "e",
+        9,
+        null,
+        null,
+        5347
+    ]
+]"""
+    assert is_stream_end(body) is True
+
+
+def test_stream_end_marker_negative():
+    assert is_stream_end('["rc_123", "some chunk"]') is False

@@ -34,6 +34,7 @@ class PageWorker:
             idle_streak_required=cfg.idle_streak_required,
             generating_streak_required=cfg.generating_streak_required,
             answer_stable_ticks=cfg.answer_stable_ticks,
+            stream_quiet_s=cfg.stream_quiet_s,
             error_markers=GEMINI_ERROR_MARKERS,
         )
         self._stop = asyncio.Event()
@@ -111,6 +112,8 @@ class PageWorker:
             ev = await self._channel.get()
             if ev.kind == "request_finished":
                 self._reducer.apply_request_finished(ev.payload.get("url", ""))
+            elif ev.kind == "stream_end":
+                self._reducer.apply_stream_end(url=ev.payload.get("url", ""))
             elif ev.kind == "dom_tick":
                 self._reducer.apply_dom_tick(
                     generating=ev.payload.get("generating", False),
