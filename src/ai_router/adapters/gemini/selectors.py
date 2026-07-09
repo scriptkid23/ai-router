@@ -13,7 +13,13 @@ SEL_RESPONSE_INNER = ".model-response-text, message-content"
 SEL_GENERATING = (
     'button[aria-label*="Stop" i], '
     'button[aria-label*="Dừng" i], '
-    'button[aria-label*="stop response" i]'
+    'button[aria-label*="stop response" i], '
+    'button[aria-label*="Dừng phản hồi" i], '
+    'div.send-button-container.visible gem-icon-button.stop, '
+    'div[data-test-id="send-button-container"].visible gem-icon-button.stop, '
+    'div.send-button-container.visible button[aria-label*="Stop" i], '
+    'div.send-button-container.visible button[aria-label*="Dừng" i], '
+    '[data-test-id="stop-button"]'
 )
 SEL_SEND_CONTAINER = (
     "div.send-button-container.visible, "

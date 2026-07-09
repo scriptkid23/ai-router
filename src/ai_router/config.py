@@ -25,7 +25,7 @@ class AppConfig:
     idle_streak_required: int = 6
     generating_streak_required: int = 2
     answer_stable_ticks: int = 4
-    stream_quiet_s: float = 1.5
+    stream_quiet_s: float = 5.0
     dom_tick_interval_ms: int = 500
     max_pages: int = 10
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
@@ -63,6 +63,8 @@ def load_config(path: Path | None = None) -> AppConfig:
             cfg.port = int(raw["port"])
         if "answer_timeout_s" in raw:
             cfg.answer_timeout_s = int(raw["answer_timeout_s"])
+        if "stream_quiet_s" in raw:
+            cfg.stream_quiet_s = float(raw["stream_quiet_s"])
         if "providers" in raw:
             for pid, pdata in raw["providers"].items():
                 cfg.providers[pid] = ProviderConfig(url=pdata["url"])
@@ -79,5 +81,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         cfg.answer_timeout_s = int(v)
     if v := os.getenv("AI_ROUTER_IDLE_STREAK_REQUIRED"):
         cfg.idle_streak_required = int(v)
+    if v := os.getenv("AI_ROUTER_STREAM_QUIET_S"):
+        cfg.stream_quiet_s = float(v)
 
     return cfg

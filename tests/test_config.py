@@ -30,4 +30,5 @@ def test_browser_queue_defaults():
     assert cfg.generating_streak_required == 2
     assert cfg.answer_stable_ticks == 4
     assert cfg.dom_tick_interval_ms == 500
+    assert cfg.stream_quiet_s == 5.0
     assert cfg.max_pages == 10

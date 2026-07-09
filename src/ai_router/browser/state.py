@@ -23,6 +23,7 @@ class BrowserState:
     last_response_text: str = ""
     response_stable_streak: int = 0
     saw_generating_this_job: bool = False
+    submitted_at: float | None = None
 
 
 class StateReducer:
@@ -65,24 +66,71 @@ class StateReducer:
         )
 
     def mark_submitting(self) -> None:
+        st = self.state
+        st.submitted_at = time.time()
+        st.saw_stream_end_this_job = False
+        st.stream_ended_at = None
+        st.last_stream_at = None
+        st.saw_generating_this_job = False
         self._set_phase("submitting", reason="mark_submitting")
 
     def mark_closed(self) -> None:
         self._set_phase("closed", reason="mark_closed")
 
     def reset_job_cycle(self) -> None:
-        self.state.saw_generating_this_job = False
-        self.state.saw_stream_end_this_job = False
-        self.state.stream_ended_at = None
-        self.state.response_stable_streak = 0
+        st = self.state
+        st.saw_generating_this_job = False
+        st.saw_stream_end_this_job = False
+        st.stream_ended_at = None
+        st.last_stream_at = None
+        st.submitted_at = None
+        st.response_stable_streak = 0
+
+    def _stream_belongs_to_job(self) -> bool:
+        st = self.state
+        return (
+            st.submitted_at is not None
+            and st.last_stream_at is not None
+            and st.last_stream_at >= st.submitted_at
+        )
 
     def apply_request_finished(self, url: str) -> None:
-        if STREAM_GENERATE_RE.search(url):
-            self.state.last_stream_at = time.time()
-            self.state.saw_generating_this_job = True
+        if not STREAM_GENERATE_RE.search(url):
+            return
+        if self.state.submitted_at is None:
+            return
+        st = self.state
+        now = time.time()
+        if st.stream_ended_at is not None and now > st.stream_ended_at:
+            trace(
+                "stream_end_reset",
+                page_id=self._page_id,
+                job_id=self._job_id,
+                reason="stream_resumed_after_e",
+            )
+            st.saw_stream_end_this_job = False
+            st.stream_ended_at = None
+        st.last_stream_at = now
+        st.saw_generating_this_job = True
 
     def apply_stream_end(self, *, url: str = "") -> None:
         st = self.state
+        if st.submitted_at is None:
+            trace(
+                "stream_end_ignored",
+                page_id=self._page_id,
+                job_id=self._job_id,
+                reason="not_submitted",
+            )
+            return
+        if not self._stream_belongs_to_job():
+            trace(
+                "stream_end_ignored",
+                page_id=self._page_id,
+                job_id=self._job_id,
+                reason="stale_stream",
+            )
+            return
         st.saw_stream_end_this_job = True
         st.stream_ended_at = time.time()
         st.saw_generating_this_job = True
@@ -115,7 +163,9 @@ class StateReducer:
             st.response_stable_streak = 1 if response_text else 0
 
         if generating:
-            if self._stream_end_quiet(st, response_text=response_text):
+            if self._stream_end_quiet(
+                st, response_text=response_text, generating=True
+            ):
                 st.generating_streak = 0
                 st.idle_streak += 1
                 if st.idle_streak >= self._idle_required:
@@ -132,36 +182,53 @@ class StateReducer:
             if st.idle_streak >= self._idle_required:
                 self._set_phase("idle", reason="dom_idle")
 
-    def _stream_end_quiet(self, st: BrowserState, *, response_text: str) -> bool:
+    def _stream_end_quiet(
+        self, st: BrowserState, *, response_text: str, generating: bool
+    ) -> bool:
         return (
             st.saw_stream_end_this_job
             and st.stream_ended_at is not None
             and (time.time() - st.stream_ended_at) >= self._stream_quiet_s
+            and not generating
             and st.response_stable_streak >= self._answer_stable
             and bool(response_text)
         )
 
-    def answer_ready_checks(self, *, before_count: int) -> dict[str, bool]:
+    def answer_ready_checks(
+        self, *, before_count: int, generating: bool = False
+    ) -> dict[str, bool]:
         st = self.state
-        idle_ok = st.phase == "idle" and st.idle_streak >= self._idle_required
-        stream_quiet_ok = self._stream_end_quiet(st, response_text=st.last_response_text)
+        stream_quiet_ok = self._stream_end_quiet(
+            st, response_text=st.last_response_text, generating=generating
+        )
+        idle_ok = (
+            st.phase == "idle"
+            and st.idle_streak >= self._idle_required
+            and st.submitted_at is None
+        )
+        phase_ok = stream_quiet_ok if st.submitted_at is not None else (
+            idle_ok or stream_quiet_ok
+        )
         return {
             "saw_generating": st.saw_generating_this_job or st.saw_stream_end_this_job,
             "new_response": st.response_count > before_count,
-            "phase_ok": idle_ok or stream_quiet_ok,
+            "phase_ok": phase_ok,
             "stable_enough": st.response_stable_streak >= self._answer_stable,
             "has_text": bool(st.last_response_text),
             "stream_end": st.saw_stream_end_this_job,
             "stream_quiet": stream_quiet_ok,
         }
 
-    def answer_ready(self, *, before_count: int) -> bool:
-        checks = self.answer_ready_checks(before_count=before_count)
+    def answer_ready(self, *, before_count: int, generating: bool = False) -> bool:
+        checks = self.answer_ready_checks(
+            before_count=before_count, generating=generating
+        )
         required = (
             checks["saw_generating"],
             checks["new_response"],
             checks["phase_ok"],
             checks["stable_enough"],
             checks["has_text"],
+            not generating,
         )
         return all(required)
