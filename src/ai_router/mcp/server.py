@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from mcp.server.fastmcp import FastMCP
 
 from ai_router.config import load_config
