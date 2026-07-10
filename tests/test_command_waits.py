@@ -1,9 +1,14 @@
+import re
+
 from ai_router.browser.state import StateReducer
+
+STREAM_RE = re.compile(r"StreamGenerate")
 
 
 def test_answer_not_ready_without_generating_phase():
     r = StateReducer(
         page_id="test",
+        stream_url_res=[STREAM_RE],
         idle_streak_required=3,
         generating_streak_required=2,
         answer_stable_ticks=2,
@@ -18,6 +23,7 @@ def test_answer_not_ready_without_generating_phase():
 def test_answer_ready_after_full_cycle():
     r = StateReducer(
         page_id="test",
+        stream_url_res=[STREAM_RE],
         idle_streak_required=2,
         generating_streak_required=1,
         answer_stable_ticks=2,
@@ -33,6 +39,7 @@ def test_answer_ready_after_full_cycle():
 def test_answer_not_ready_with_stream_end_while_stop_visible():
     r = StateReducer(
         page_id="test",
+        stream_url_res=[STREAM_RE],
         idle_streak_required=6,
         generating_streak_required=2,
         answer_stable_ticks=2,
@@ -57,6 +64,7 @@ def test_answer_not_ready_with_stream_end_while_stop_visible():
 def test_answer_ready_after_stream_end_and_stop_gone():
     r = StateReducer(
         page_id="test",
+        stream_url_res=[STREAM_RE],
         idle_streak_required=6,
         generating_streak_required=2,
         answer_stable_ticks=2,

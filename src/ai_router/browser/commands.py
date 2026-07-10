@@ -94,6 +94,10 @@ class CommandExecutor:
                 return answer
             elif cmd.op == "goto":
                 await self._page.goto(cmd.args["url"], wait_until="domcontentloaded")
+                # A goto opens a fresh chat and resets the response list —
+                # rebase the baseline so wait_answer compares against the
+                # NEW chat, not the previous one.
+                before_count, _ = await self._profile.read_response_snapshot(self._page)
             trace(
                 "cmd_done",
                 page_id=self._page_id,

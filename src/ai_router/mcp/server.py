@@ -6,6 +6,7 @@ from ai_router.logger import configure
 from ai_router.mcp.tools import (
     create_app_state,
     handle_ask,
+    handle_ask_multi,
     handle_list_providers,
     handle_session_status,
 )
@@ -38,6 +39,29 @@ def create_mcp_app(host: str, port: int) -> FastMCP:
                 _state,
                 prompt=prompt,
                 provider=provider,
+                mcp_session_id=_mcp_session_id(ctx),
+            )
+        except AiRouterError as exc:
+            raise RuntimeError(f"[{exc.code}] {exc.message}") from exc
+
+    @mcp.tool()
+    async def ask_multi(
+        ctx: Context,
+        prompt: str,
+        providers: list[str] | None = None,
+        strategy: str | None = None,
+    ) -> dict:
+        """Send one prompt to several providers in parallel; return every answer.
+
+        strategy: "all" (default; selected=null, client compares),
+        "first" (earliest finisher), "longest" (longest non-error answer).
+        """
+        try:
+            return await handle_ask_multi(
+                _state,
+                prompt=prompt,
+                providers=providers,
+                strategy=strategy,
                 mcp_session_id=_mcp_session_id(ctx),
             )
         except AiRouterError as exc:
