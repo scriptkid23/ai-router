@@ -9,7 +9,7 @@ packages = [{ include = "ai_router", from = "src" }]
 [tool.poetry.dependencies]
 python = "^3.11"
 typer = { extras = ["all"], version = "^0.15" }
-cloakbrowser = "^0.4.4"
+cloakbrowser = "^0.4.10"
 mcp = "^1.6"
 uvicorn = "^0.30"
 pyyaml = "^6.0"

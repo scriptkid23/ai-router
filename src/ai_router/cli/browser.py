@@ -23,6 +23,7 @@ async def _login(provider: str | None) -> None:
         else [a for a in registry.list_all() if a.status == "available"]
     )
 
+    typer.echo("Launching browser...")
     ctx = await launch_persistent_context_async(
         str(cfg.profile_dir),
         headless=False,
