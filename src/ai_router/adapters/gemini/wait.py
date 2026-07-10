@@ -11,6 +11,7 @@ from ai_router.adapters.gemini.selectors import (
     SEL_RESPONSE_TEXT,
     SEL_SEND_CONTAINER,
 )
+from ai_router.browser.profile import StreamDone
 
 # Gemini StreamGenerate end-of-turn marker: ["e", ...]
 STREAM_END_RE = re.compile(r'\[\s*"e"\s*,', re.I)
@@ -30,6 +31,27 @@ def is_rate_limited(text: str) -> bool:
 def is_stream_end(body: str) -> bool:
     """True when StreamGenerate payload contains Gemini's end-of-turn tag."""
     return bool(STREAM_END_RE.search(body))
+
+
+def parse_stream_done(status: int, body: str) -> StreamDone:
+    """Gemini StreamGenerate: done when the end-of-turn ["e", ...] tag appears."""
+    if is_stream_end(body):
+        return StreamDone(done=True, ok=True)
+    return StreamDone(done=False, ok=False)
+
+
+async def send_button_ready(page: Page) -> bool:
+    """True when Gemini's Send control is present and enabled."""
+    container = page.locator(SEL_SEND_CONTAINER).last
+    if await container.count() == 0:
+        return False
+    wrapper = container.locator("gem-icon-button.send-button.submit").first
+    if await wrapper.count() > 0:
+        return await wrapper.get_attribute("aria-disabled") != "true"
+    submit = container.locator('button[aria-label="Send message"]').first
+    if await submit.count() == 0:
+        return False
+    return not await submit.is_disabled()
 
 
 async def is_stop_visible(page: Page) -> bool:

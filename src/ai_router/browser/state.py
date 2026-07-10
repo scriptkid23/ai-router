@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import re
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from ai_router.adapters.gemini.selectors import STREAM_GENERATE_RE
 from ai_router.logger import trace
 
 Phase = Literal["idle", "submitting", "generating", "error", "closed"]
@@ -19,6 +20,7 @@ class BrowserState:
     stream_ended_at: float | None = None
     saw_stream_end_this_job: bool = False
     error_text: str | None = None
+    error_kind: str | None = None
     response_count: int = 0
     last_response_text: str = ""
     response_stable_streak: int = 0
@@ -31,17 +33,21 @@ class StateReducer:
         self,
         *,
         page_id: str,
+        stream_url_res: Sequence[re.Pattern[str]],
         idle_streak_required: int,
         generating_streak_required: int,
         answer_stable_ticks: int,
         stream_quiet_s: float,
         error_markers: tuple[str, ...],
+        no_stream_fallback_ticks: int = 20,
     ) -> None:
         self._page_id = page_id
+        self._stream_url_res = tuple(stream_url_res)
         self._job_id: str | None = None
         self._idle_required = idle_streak_required
         self._gen_required = generating_streak_required
         self._answer_stable = answer_stable_ticks
+        self._no_stream_fallback = no_stream_fallback_ticks
         self._stream_quiet_s = stream_quiet_s
         self._error_markers = error_markers
         self.state = BrowserState()
@@ -85,6 +91,8 @@ class StateReducer:
         st.last_stream_at = None
         st.submitted_at = None
         st.response_stable_streak = 0
+        st.error_text = None
+        st.error_kind = None
 
     def _stream_belongs_to_job(self) -> bool:
         st = self.state
@@ -94,9 +102,19 @@ class StateReducer:
             and st.last_stream_at >= st.submitted_at
         )
 
+    def _matches_stream(self, url: str) -> bool:
+        return any(rx.search(url) for rx in self._stream_url_res)
+
     def apply_request_finished(self, url: str) -> None:
-        if not STREAM_GENERATE_RE.search(url):
+        if not self._matches_stream(url):
             return
+        trace(
+            "stream_request_finished",
+            page_id=self._page_id,
+            job_id=self._job_id,
+            url=url[:110],
+            submitted=self.state.submitted_at is not None,
+        )
         if self.state.submitted_at is None:
             return
         st = self.state
@@ -113,7 +131,14 @@ class StateReducer:
         st.last_stream_at = now
         st.saw_generating_this_job = True
 
-    def apply_stream_end(self, *, url: str = "") -> None:
+    def apply_stream_end(
+        self,
+        *,
+        url: str = "",
+        ok: bool = True,
+        error_kind: str | None = None,
+        error_text: str | None = None,
+    ) -> None:
         st = self.state
         if st.submitted_at is None:
             trace(
@@ -130,6 +155,11 @@ class StateReducer:
                 job_id=self._job_id,
                 reason="stale_stream",
             )
+            return
+        if not ok:
+            st.error_kind = error_kind or "error"
+            st.error_text = error_text or "Provider stream error"
+            self._set_phase("error", reason=f"stream_{st.error_kind}")
             return
         st.saw_stream_end_this_job = True
         st.stream_ended_at = time.time()
@@ -206,9 +236,21 @@ class StateReducer:
             and st.idle_streak >= self._idle_required
             and st.submitted_at is None
         )
-        phase_ok = stream_quiet_ok if st.submitted_at is not None else (
-            idle_ok or stream_quiet_ok
+        # DOM-only fallback: no network stream-end ever arrived (e.g. the
+        # provider switched transports), but the turn visibly finished — stop
+        # button gone and the answer text identical for an extended streak.
+        no_stream_fallback_ok = (
+            st.submitted_at is not None
+            and st.saw_generating_this_job
+            and not st.saw_stream_end_this_job
+            and not generating
+            and st.response_stable_streak >= self._no_stream_fallback
+            and bool(st.last_response_text)
         )
+        if st.submitted_at is not None:
+            phase_ok = stream_quiet_ok or no_stream_fallback_ok
+        else:
+            phase_ok = idle_ok or stream_quiet_ok
         return {
             "saw_generating": st.saw_generating_this_job or st.saw_stream_end_this_job,
             "new_response": st.response_count > before_count,
@@ -217,6 +259,7 @@ class StateReducer:
             "has_text": bool(st.last_response_text),
             "stream_end": st.saw_stream_end_this_job,
             "stream_quiet": stream_quiet_ok,
+            "no_stream_fallback": no_stream_fallback_ok,
         }
 
     def answer_ready(self, *, before_count: int, generating: bool = False) -> bool:
