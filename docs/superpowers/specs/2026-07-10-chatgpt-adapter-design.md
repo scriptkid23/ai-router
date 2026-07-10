@@ -46,8 +46,8 @@ message có `is_visually_hidden_from_conversation:true`. Lưu ý message reasoni
 
 ### 1. Lớp abstraction `ProviderProfile`
 
-Tạo `src/ai_router/adapters/base.py` (mở rộng) hoặc module mới `src/ai_router/browser/profile.py`
-định nghĩa dataclass/Protocol `ProviderProfile` gom phần provider-specific:
+Tạo module mới `src/ai_router/browser/profile.py` định nghĩa dataclass `ProviderProfile` +
+`StreamDone`, gom phần provider-specific:
 
 - `stream_url_re: re.Pattern` — nhận diện URL response streaming.
 - `parse_stream_done(status: int, body: str) -> StreamDone` — parse body → kết luận.
