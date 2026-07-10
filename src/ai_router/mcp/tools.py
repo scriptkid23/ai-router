@@ -12,6 +12,7 @@ from ai_router.browser.events import page_id_of
 from ai_router.browser.manager import BrowserManager
 from ai_router.browser.page_queue import AskJob, PageQueueRegistry
 from ai_router.browser.page_worker import PageWorker
+from ai_router.browser.profile import ProviderProfile
 from ai_router.config import AppConfig, load_config
 from ai_router.errors import (
     AiRouterError,
@@ -31,16 +32,27 @@ class AppState:
     browser: BrowserManager
     page_queues: PageQueueRegistry
     page_workers: dict[str, PageWorker]
+    profiles: dict[str, ProviderProfile]
 
 
 def create_app_state(config: AppConfig | None = None) -> AppState:
     cfg = config or load_config()
+    registry = build_registry()
+    # No hasattr guard: an "available" adapter missing build_profile should
+    # fail fast at startup (AttributeError) rather than surface later as a
+    # confusing ProviderNotReadyError at ask time.
+    profiles = {
+        a.id: a.build_profile(cfg)
+        for a in registry.list_all()
+        if a.status == "available"
+    }
     return AppState(
         config=cfg,
-        registry=build_registry(),
+        registry=registry,
         browser=BrowserManager(cfg),
         page_queues=PageQueueRegistry(),
         page_workers={},
+        profiles=profiles,
     )
 
 
@@ -50,7 +62,9 @@ def ensure_worker(state: AppState, page) -> PageWorker:
         if len(state.page_workers) >= state.config.max_pages:
             raise AiRouterError("BROWSER_BUSY", "Maximum page workers reached")
         queue = state.page_queues.queue_for(page)
-        worker = PageWorker(page, queue, state.config)
+        worker = PageWorker(
+            page, queue, state.config, state.profiles, state.config.default_provider
+        )
         worker.start()
         state.page_workers[pid] = worker
         trace("worker_created", page_id=pid, worker_count=len(state.page_workers))
@@ -82,13 +96,19 @@ async def handle_ask(
         worker = ensure_worker(state, page)
         loop = asyncio.get_running_loop()
         future = loop.create_future()
+        profile = state.profiles.get(adapter.id)
+        timeout_s = (
+            profile.answer_timeout_s
+            if profile is not None and profile.answer_timeout_s
+            else float(state.config.answer_timeout_s)
+        )
         job = AskJob(
             job_id=str(uuid.uuid4()),
             mcp_session_id=mcp_session_id,
             prompt=prompt,
             provider_id=adapter.id,
             future=future,
-            timeout_s=float(state.config.answer_timeout_s),
+            timeout_s=timeout_s,
         )
         page_id = page_id_of(page)
         trace(

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from playwright.async_api import Page
 
-from ai_router.adapters.gemini.selectors import STREAM_GENERATE_RE
-from ai_router.adapters.gemini.wait import is_stream_end
+from ai_router.browser.profile import ProviderProfile
+from ai_router.logger import trace
 
 BrowserEventKind = Literal[
     "request_finished",
@@ -54,33 +54,103 @@ def page_id_of(page: Page) -> str:
     return str(id(page))
 
 
-def attach_listeners(page: Page, channel: EventChannel) -> None:
+async def handle_response(
+    response: Any, channel: EventChannel, profiles: Sequence[ProviderProfile]
+) -> None:
+    profile = next(
+        (p for p in profiles if p.stream_url_re.search(response.url)), None
+    )
+    if profile is None:
+        return
+    trace(
+        "stream_response",
+        provider=profile.provider_id,
+        url=response.url[:110],
+        status=getattr(response, "status", None),
+    )
+    try:
+        await response.finished()
+        status = response.status
+        body = await response.text()
+    except Exception as exc:
+        trace(
+            "stream_response_error",
+            provider=profile.provider_id,
+            url=response.url[:110],
+            error=repr(exc)[:110],
+        )
+        return
+    result = profile.parse_stream_done(status, body)
+    trace(
+        "stream_parse",
+        provider=profile.provider_id,
+        done=result.done,
+        ok=result.ok,
+        kind=result.error_kind,
+        body_len=len(body),
+    )
+    if result.done:
+        await channel.emit(
+            "stream_end",
+            url=response.url,
+            ok=result.ok,
+            error_kind=result.error_kind,
+            error_text=result.error_text,
+        )
+
+
+def attach_listeners(
+    page: Page, channel: EventChannel, profiles: Sequence[ProviderProfile]
+) -> None:
     loop = asyncio.get_event_loop()
 
     def on_request_finished(request) -> None:
         loop.create_task(channel.emit("request_finished", url=request.url))
 
-    async def inspect_stream_response(response) -> None:
-        if not STREAM_GENERATE_RE.search(response.url):
-            return
-        try:
-            await response.finished()
-            body = await response.text()
-        except Exception:
-            return
-        if is_stream_end(body):
-            await channel.emit("stream_end", url=response.url)
-
     def on_response(response) -> None:
-        loop.create_task(inspect_stream_response(response))
+        loop.create_task(handle_response(response, channel, profiles))
 
     def on_framenavigated(frame) -> None:
         if frame == page.main_frame:
             loop.create_task(channel.emit("framenavigated", url=frame.url))
 
+    def on_websocket(ws) -> None:
+        trace("websocket_open", url=ws.url[:110])
+
+        def on_frame(payload) -> None:
+            if isinstance(payload, bytes):
+                text = payload.decode("utf-8", errors="ignore")
+            else:
+                text = payload
+            for profile in profiles:
+                parser = profile.parse_ws_frame
+                if parser is None:
+                    continue
+                result = parser(text)
+                if result is not None and result.done:
+                    trace(
+                        "ws_stream_end",
+                        provider=profile.provider_id,
+                        ok=result.ok,
+                        kind=result.error_kind,
+                    )
+                    loop.create_task(
+                        channel.emit(
+                            "stream_end",
+                            url=ws.url,
+                            ok=result.ok,
+                            error_kind=result.error_kind,
+                            error_text=result.error_text,
+                        )
+                    )
+                    break
+
+        ws.on("framereceived", on_frame)
+
     page.on("requestfinished", on_request_finished)
     page.on("response", on_response)
     page.on("framenavigated", on_framenavigated)
+    page.on("websocket", on_websocket)
 
 
 async def dom_tick_loop(
