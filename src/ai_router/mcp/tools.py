@@ -21,7 +21,6 @@ from ai_router.errors import (
     TimeoutError_,
 )
 from ai_router.router.resolve import resolve_provider
-from ai_router.session.manager import SessionManager
 from ai_router.logger import trace
 
 
@@ -30,7 +29,6 @@ class AppState:
     config: AppConfig
     registry: ProviderRegistry
     browser: BrowserManager
-    sessions: SessionManager
     page_queues: PageQueueRegistry
     page_workers: dict[str, PageWorker]
 
@@ -41,7 +39,6 @@ def create_app_state(config: AppConfig | None = None) -> AppState:
         config=cfg,
         registry=build_registry(),
         browser=BrowserManager(cfg),
-        sessions=SessionManager(),
         page_queues=PageQueueRegistry(),
         page_workers={},
     )
@@ -67,9 +64,6 @@ async def handle_ask(
     provider: str | None,
     mcp_session_id: str | None,
 ) -> dict:
-    if not mcp_session_id:
-        raise AiRouterError("MISSING_SESSION", "Mcp-Session-Id header required")
-
     adapter, routing_reason = resolve_provider(
         state.registry, provider, default=state.config.default_provider
     )
@@ -77,20 +71,15 @@ async def handle_ask(
         raise ProviderNotReadyError(adapter.id)
 
     try:
-        session = await state.sessions.get_or_create(
-            mcp_session_id, adapter, state.browser
-        )
-        preserve_chat = session.message_count > 0 or session.chat_url is not None
+        page = await state.browser.new_page()
         if hasattr(adapter, "ensure_page_ready"):
-            status = await adapter.ensure_page_ready(
-                session.page, preserve_chat=preserve_chat
-            )
+            status = await adapter.ensure_page_ready(page)
         else:
-            status = await adapter.check_session(session.page)
+            status = await adapter.check_session(page)
         if status == SessionStatus.LOGGED_OUT:
             raise NotLoggedInError()
 
-        worker = ensure_worker(state, session.page)
+        worker = ensure_worker(state, page)
         loop = asyncio.get_running_loop()
         future = loop.create_future()
         job = AskJob(
@@ -101,7 +90,7 @@ async def handle_ask(
             future=future,
             timeout_s=float(state.config.answer_timeout_s),
         )
-        page_id = page_id_of(session.page)
+        page_id = page_id_of(page)
         trace(
             "ask_enqueue",
             job_id=job.job_id,
@@ -109,7 +98,7 @@ async def handle_ask(
             page_id=page_id,
             provider=adapter.id,
             prompt=prompt[:80],
-            queue_depth=state.page_queues.queue_for(session.page).depth(),
+            queue_depth=state.page_queues.queue_for(page).depth(),
             running_job_id=getattr(worker, "_running_job_id", None),
         )
         await worker.enqueue(job)
@@ -126,7 +115,6 @@ async def handle_ask(
             mcp_session_id=mcp_session_id,
             answer_len=len(answer),
         )
-        state.sessions.record_message(mcp_session_id, page_url=session.page.url)
     except PlaywrightError as exc:
         if "closed" in str(exc).lower():
             raise BrowserClosedError() from exc
