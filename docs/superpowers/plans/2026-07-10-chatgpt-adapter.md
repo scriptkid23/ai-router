@@ -488,6 +488,37 @@ def test_reset_job_cycle_clears_error():
     r.reset_job_cycle()
     assert r.state.error_kind is None
     assert r.state.error_text is None
+
+
+def test_error_phase_recovers_after_clean_ticks():
+    # Recovery viability: after a stream error, a reload (clean DOM ticks,
+    # no error markers) must pull the phase back to idle so the recovery
+    # plan's wait_idle can proceed instead of instantly re-raising.
+    r = make_reducer()
+    r.mark_submitting()
+    r.apply_request_finished(GEMINI_STREAM_URL)
+    r.apply_stream_end(ok=False, error_kind="error", error_text="boom")
+    assert r.state.phase == "error"
+    for _ in range(3):
+        r.apply_dom_tick(generating=False, response_count=0, response_text="", error_text=None)
+    assert r.state.phase == "idle"
+
+
+def test_answer_not_ready_without_stream_end():
+    # Hybrid completion is an AND: with a job submitted, stable DOM text
+    # alone must NOT satisfy answer_ready — the network stream_end signal
+    # is required. If a provider silently switches transports (e.g. to
+    # WebSockets) and no stream_end ever arrives, the job times out with
+    # clear logs instead of returning a possibly-truncated answer.
+    r = make_reducer(stream_quiet_s=0.0)
+    r.apply_dom_tick(generating=True, response_count=0, response_text="", error_text=None)
+    r.mark_submitting()
+    r.apply_request_finished(GEMINI_STREAM_URL)
+    for _ in range(4):
+        r.apply_dom_tick(generating=False, response_count=1, response_text="answer", error_text=None)
+    checks = r.answer_ready_checks(before_count=0, generating=False)
+    assert checks["stream_end"] is False
+    assert r.answer_ready(before_count=0, generating=False) is False
 ```
 
 Replace `tests/test_command_waits.py` with:
@@ -1119,7 +1150,7 @@ git commit -m "refactor: CommandExecutor consumes ProviderProfile; provider-scop
 - Consumes: everything from Tasks 1–5.
 - Produces:
   - `PageWorker.__init__(page, queue, cfg, profiles: dict[str, ProviderProfile], default_provider: str)` — worker holds `self._profiles`; `self._profile` is the active one (default provider's at start, switched per job in `_execute_job`).
-  - `AppState.profiles: dict[str, ProviderProfile]` — built in `create_app_state` from `adapter.build_profile(cfg)` for every `status == "available"` adapter that has `build_profile`.
+  - `AppState.profiles: dict[str, ProviderProfile]` — built in `create_app_state` from `adapter.build_profile(cfg)` for every `status == "available"` adapter (no hasattr guard — missing `build_profile` on an available adapter must fail fast at startup).
   - `handle_ask` uses `profile.answer_timeout_s or config.answer_timeout_s` for `AskJob.timeout_s`.
   - `ProviderAdapter` protocol gains `def build_profile(self, cfg: AppConfig) -> ProviderProfile: ...`.
 
@@ -1257,6 +1288,9 @@ from ai_router.logger import trace
             generating_streak_required=cfg.generating_streak_required,
             answer_stable_ticks=cfg.answer_stable_ticks,
             stream_quiet_s=cfg.stream_quiet_s,
+            # Union across profiles is safe: _dom_snapshot only emits error_text
+            # after matching the ACTIVE job's profile.error_markers, so the
+            # reducer's re-check can never fire on another provider's markers.
             error_markers=tuple({m for p in profiles.values() for m in p.error_markers}),
         )
         self._stop = asyncio.Event()
@@ -1384,10 +1418,13 @@ In `_run()`, the listener line becomes:
 def create_app_state(config: AppConfig | None = None) -> AppState:
     cfg = config or load_config()
     registry = build_registry()
+    # No hasattr guard: an "available" adapter missing build_profile should
+    # fail fast at startup (AttributeError) rather than surface later as a
+    # confusing ProviderNotReadyError at ask time.
     profiles = {
         a.id: a.build_profile(cfg)
         for a in registry.list_all()
-        if a.status == "available" and hasattr(a, "build_profile")
+        if a.status == "available"
     }
     return AppState(
         config=cfg,
@@ -1451,6 +1488,13 @@ git commit -m "refactor: browser layer fully generic over ProviderProfile"
 **Interfaces:**
 - Consumes: `StreamDone` (Task 1).
 - Produces: `parse_stream_done(status: int, body: str) -> StreamDone` — signature identical to gemini's (Task 2), pluggable into `ProviderProfile.parse_stream_done`.
+
+**Role boundary (important):** this parser emits a *signal only*. A `done, ok` verdict
+feeds `apply_stream_end` — it never returns the answer by itself. `_wait_answer` still
+gates on the full hybrid AND in `StateReducer.answer_ready`: stream_end seen +
+`stream_quiet_s` elapsed + stop button gone + DOM text stable for `answer_stable_ticks`
+ticks. So an SSE `done` arriving before the DOM finishes rendering can never yield an
+empty/truncated answer — the DOM stability gate holds the job until the text settles.
 
 **Decision table (from spec):**
 
@@ -2281,7 +2325,11 @@ Expected: answer contains `6`.
 
 In the ChatGPT web UI set the model to a thinking model (e.g. gpt-5-thinking), then repeat the chatgpt ask with a prompt that triggers reasoning (e.g. "How many r's are in strawberry? Think carefully."). Expected: no premature `wait_answer_ready` during the reasoning phase; answer returns after reasoning ends (within 300 s).
 
-- [ ] **Step 6: Final commit (if smoke fixes were needed)**
+- [ ] **Step 6: Dirty-state recovery check (manual, best-effort)**
+
+While a chatgpt ask is generating, close/kill the network mid-stream (toggle Wi-Fi or kill the tab's connection in DevTools → Network → Offline for a few seconds). Expected: the job either recovers via the recovery plan (`goto` chatgpt.com → resubmit once — watch for a `job_recovery` trace) or fails cleanly with `CHATGPT_INCOMPLETE`/`TIMEOUT`. Then issue a fresh ask and confirm it succeeds — the worker's error state must not leak into the next job (`reset_job_cycle` clears `error_kind`/`error_text`; unit-tested in `test_error_phase_recovers_after_clean_ticks` and `test_reset_job_cycle_clears_error`).
+
+- [ ] **Step 7: Final commit (if smoke fixes were needed)**
 
 ```bash
 git add -A
