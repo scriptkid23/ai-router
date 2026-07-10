@@ -1,11 +1,15 @@
+import re
 import time
 
 from ai_router.browser.state import StateReducer
+
+STREAM_RE = re.compile(r"StreamGenerate")
 
 
 def test_idle_after_quiet_dom_ticks():
     r = StateReducer(
         page_id="test",
+        stream_url_res=[STREAM_RE],
         idle_streak_required=3,
         generating_streak_required=2,
         answer_stable_ticks=2,
@@ -21,6 +25,7 @@ def test_idle_after_quiet_dom_ticks():
 def test_generating_when_stop_visible():
     r = StateReducer(
         page_id="test",
+        stream_url_res=[STREAM_RE],
         idle_streak_required=3,
         generating_streak_required=2,
         answer_stable_ticks=2,
@@ -36,6 +41,7 @@ def test_generating_when_stop_visible():
 def test_error_on_1095_marker():
     r = StateReducer(
         page_id="test",
+        stream_url_res=[STREAM_RE],
         idle_streak_required=3,
         generating_streak_required=2,
         answer_stable_ticks=2,
@@ -54,6 +60,7 @@ def test_error_on_1095_marker():
 def test_stream_generate_sets_timestamp():
     r = StateReducer(
         page_id="test",
+        stream_url_res=[STREAM_RE],
         idle_streak_required=3,
         generating_streak_required=2,
         answer_stable_ticks=2,
@@ -74,6 +81,7 @@ def test_stream_generate_sets_timestamp():
 def test_stream_end_ignored_without_submit():
     r = StateReducer(
         page_id="test",
+        stream_url_res=[STREAM_RE],
         idle_streak_required=3,
         generating_streak_required=2,
         answer_stable_ticks=2,
@@ -87,6 +95,7 @@ def test_stream_end_ignored_without_submit():
 def test_stream_end_reset_when_stream_resumes():
     r = StateReducer(
         page_id="test",
+        stream_url_res=[STREAM_RE],
         idle_streak_required=3,
         generating_streak_required=2,
         answer_stable_ticks=2,
@@ -110,6 +119,7 @@ def test_stream_end_reset_when_stream_resumes():
 def test_stream_end_requires_stream_after_submit():
     r = StateReducer(
         page_id="test",
+        stream_url_res=[STREAM_RE],
         idle_streak_required=3,
         generating_streak_required=2,
         answer_stable_ticks=2,

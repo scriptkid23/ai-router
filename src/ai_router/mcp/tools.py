@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from dataclasses import dataclass
 
@@ -11,13 +12,13 @@ from ai_router.adapters.registry import ProviderRegistry, build_registry
 from ai_router.browser.events import page_id_of
 from ai_router.browser.manager import BrowserManager
 from ai_router.browser.page_queue import AskJob, PageQueueRegistry
+from ai_router.browser.page_router import PageRouter
 from ai_router.browser.page_worker import PageWorker
 from ai_router.browser.profile import ProviderProfile
 from ai_router.config import AppConfig, load_config
 from ai_router.errors import (
     AiRouterError,
     BrowserClosedError,
-    NotLoggedInError,
     ProviderNotReadyError,
     TimeoutError_,
 )
@@ -33,6 +34,7 @@ class AppState:
     page_queues: PageQueueRegistry
     page_workers: dict[str, PageWorker]
     profiles: dict[str, ProviderProfile]
+    page_router: PageRouter
 
 
 def create_app_state(config: AppConfig | None = None) -> AppState:
@@ -46,24 +48,32 @@ def create_app_state(config: AppConfig | None = None) -> AppState:
         for a in registry.list_all()
         if a.status == "available"
     }
+    browser = BrowserManager(cfg)
     return AppState(
         config=cfg,
         registry=registry,
-        browser=BrowserManager(cfg),
+        browser=browser,
         page_queues=PageQueueRegistry(),
         page_workers={},
         profiles=profiles,
+        page_router=PageRouter(browser, cfg.max_pages),
     )
 
 
-def ensure_worker(state: AppState, page) -> PageWorker:
+def ensure_worker(
+    state: AppState, page, default_provider: str | None = None
+) -> PageWorker:
     pid = page_id_of(page)
     if pid not in state.page_workers:
         if len(state.page_workers) >= state.config.max_pages:
             raise AiRouterError("BROWSER_BUSY", "Maximum page workers reached")
         queue = state.page_queues.queue_for(page)
         worker = PageWorker(
-            page, queue, state.config, state.profiles, state.config.default_provider
+            page,
+            queue,
+            state.config,
+            state.profiles,
+            default_provider or state.config.default_provider,
         )
         worker.start()
         state.page_workers[pid] = worker
@@ -85,15 +95,8 @@ async def handle_ask(
         raise ProviderNotReadyError(adapter.id)
 
     try:
-        page = await state.browser.new_page()
-        if hasattr(adapter, "ensure_page_ready"):
-            status = await adapter.ensure_page_ready(page)
-        else:
-            status = await adapter.check_session(page)
-        if status == SessionStatus.LOGGED_OUT:
-            raise NotLoggedInError()
-
-        worker = ensure_worker(state, page)
+        page = await state.page_router.page_for(adapter)
+        worker = ensure_worker(state, page, default_provider=adapter.id)
         loop = asyncio.get_running_loop()
         future = loop.create_future()
         profile = state.profiles.get(adapter.id)
@@ -147,6 +150,63 @@ async def handle_ask(
     }
 
 
+async def handle_ask_multi(
+    state: AppState,
+    *,
+    prompt: str,
+    providers: list[str] | None = None,
+    strategy: str | None = None,
+    mcp_session_id: str | None,
+) -> dict:
+    chosen = strategy or state.config.parallel_default_strategy
+    if chosen not in ("all", "first", "longest"):
+        raise AiRouterError("INVALID_STRATEGY", f"Unknown strategy: {chosen}")
+    ids = list(
+        providers
+        or state.config.parallel_default_providers
+        or [a.id for a in state.registry.list_all() if a.status == "available"]
+    )
+    if not ids:
+        raise AiRouterError("NO_PROVIDERS", "No providers available for ask_multi")
+
+    async def _one(pid: str) -> tuple[dict, float]:
+        started = time.monotonic()
+        try:
+            res = await handle_ask(
+                state, prompt=prompt, provider=pid, mcp_session_id=mcp_session_id
+            )
+            elapsed = time.monotonic() - started
+            entry = {
+                "provider": res["provider"],
+                "answer": res["answer"],
+                "duration_s": round(elapsed, 1),
+                "routing_reason": res["routing_reason"],
+                "error": None,
+            }
+        except AiRouterError as exc:
+            elapsed = time.monotonic() - started
+            trace("ask_multi_provider_error", provider=pid, code=exc.code)
+            entry = {
+                "provider": pid,
+                "answer": None,
+                "duration_s": round(elapsed, 1),
+                "routing_reason": "explicit param",
+                "error": exc.code,
+            }
+        return entry, elapsed
+
+    trace("ask_multi_fanout", providers=",".join(ids), strategy=chosen)
+    results = await asyncio.gather(*(_one(pid) for pid in ids))
+    answers = [entry for entry, _ in results]
+    ok = [(entry, took) for entry, took in results if entry["error"] is None]
+    selected = None
+    if chosen == "first" and ok:
+        selected = min(ok, key=lambda item: item[1])[0]
+    elif chosen == "longest" and ok:
+        selected = max(ok, key=lambda item: len(item[0]["answer"]))[0]
+    return {"answers": answers, "selected": selected}
+
+
 async def handle_list_providers(state: AppState) -> dict:
     return {
         "providers": [
@@ -161,7 +221,9 @@ async def handle_session_status(
     *,
     provider: str | None,
 ) -> dict:
-    page = await state.browser.new_page()
+    # Session checks navigate — use a dedicated status tab so they never
+    # touch a pinned provider tab that may be mid-generation.
+    page = await state.page_router.status_page()
     targets = (
         [state.registry.get(provider)]
         if provider

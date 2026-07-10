@@ -63,6 +63,16 @@ class BrowserManager:
             ctx = await self.ensure_context()
             return await ctx.new_page()
 
+    async def new_tab(self) -> Page:
+        """Always create a NEW tab (new_page() reuses pages[0])."""
+        ctx = await self.ensure_context()
+        try:
+            return await ctx.new_page()
+        except PlaywrightError:
+            await self._reset_context()
+            ctx = await self.ensure_context()
+            return await ctx.new_page()
+
     @asynccontextmanager
     async def acquire(self) -> AsyncIterator[BrowserContext]:
         """Serialize browser automation — concurrent asks wait in FIFO order."""

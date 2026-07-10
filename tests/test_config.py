@@ -32,3 +32,24 @@ def test_browser_queue_defaults():
     assert cfg.dom_tick_interval_ms == 500
     assert cfg.stream_quiet_s == 5.0
     assert cfg.max_pages == 10
+
+
+def test_parallel_ask_defaults(tmp_path):
+    cfg = load_config(tmp_path / "missing.yaml")
+    assert cfg.parallel_default_providers == []
+    assert cfg.parallel_default_strategy == "all"
+
+
+def test_parallel_ask_from_yaml(tmp_path):
+    p = tmp_path / "config.yaml"
+    p.write_text(
+        "parallel_ask:\n"
+        "  default_providers:\n"
+        "    - gemini\n"
+        "    - chatgpt\n"
+        "  default_strategy: longest\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(p)
+    assert cfg.parallel_default_providers == ["gemini", "chatgpt"]
+    assert cfg.parallel_default_strategy == "longest"

@@ -33,6 +33,9 @@ class AppConfig:
     dom_tick_interval_ms: int = 500
     chatgpt_answer_timeout_s: float = 300.0
     max_pages: int = 10
+    # ask_multi fan-out defaults; empty list = all "available" providers
+    parallel_default_providers: list[str] = field(default_factory=list)
+    parallel_default_strategy: str = "all"
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
 
 
@@ -76,6 +79,12 @@ def load_config(path: Path | None = None) -> AppConfig:
         if "providers" in raw:
             for pid, pdata in raw["providers"].items():
                 cfg.providers[pid] = ProviderConfig(url=pdata["url"])
+        if "parallel_ask" in raw:
+            pa = raw["parallel_ask"] or {}
+            if "default_providers" in pa:
+                cfg.parallel_default_providers = [str(p) for p in pa["default_providers"]]
+            if "default_strategy" in pa:
+                cfg.parallel_default_strategy = str(pa["default_strategy"])
 
     if v := os.getenv("AI_ROUTER_PROFILE_DIR"):
         cfg.profile_dir = _expand(v)
