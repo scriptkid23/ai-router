@@ -11,7 +11,7 @@ from ai_router.browser.events import page_id_of
 @dataclass
 class AskJob:
     job_id: str
-    mcp_session_id: str
+    mcp_session_id: str | None
     prompt: str
     provider_id: str
     future: asyncio.Future[str]
