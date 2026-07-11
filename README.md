@@ -1,6 +1,6 @@
 # ai-router
 
-Python MCP server that routes prompts to web AI providers (Gemini, ChatGPT) via CloakBrowser.
+**About:** ai-router is a stdio MCP server that lets AI coding agents (Cursor, Claude Code, Claude Desktop, and other MCP clients) send prompts to **Gemini** and **ChatGPT** through real browser sessions — no API keys. Install with `pipx install mcp-ai-router`, log in once via CLI, then connect your MCP client with `args: ["serve"]`.
 
 | | Name |
 |---|------|
@@ -37,7 +37,7 @@ ai-router --help
 ```
 
 > **CloakBrowser download (first use)**  
-> `pipx install` does **not** download the browser binary. On the **first** command that opens a browser (`ai-router browser login` or the first `ask` in Cursor), CloakBrowser automatically downloads a stealth Chromium binary (~200 MB) to `~/.cloakbrowser/`. This is a one-time download per machine (unless CloakBrowser updates the binary version).  
+> `pipx install` does **not** download the browser binary. On the **first** command that opens a browser (`ai-router browser login` or the first `ask` from your MCP client), CloakBrowser automatically downloads a stealth Chromium binary (~200 MB) to `~/.cloakbrowser/`. This is a one-time download per machine (unless CloakBrowser updates the binary version).  
 > You do **not** need to run `playwright install`. Stable Chrome must be installed on the system, but the automation uses the CloakBrowser-managed binary, not your local Chrome app.
 
 Upgrade later:
@@ -66,9 +66,11 @@ ai-router browser status
 
 Expected output: `gemini: logged_in` and/or `chatgpt: logged_in`
 
-### Connect Cursor (stdio — recommended)
+### Connect MCP client (stdio — recommended)
 
-Add to Cursor MCP settings (`~/.cursor/mcp.json` or project `.cursor/mcp.json`):
+Works with any MCP client that supports stdio servers — **Cursor**, **Claude Code**, **Claude Desktop**, etc.
+
+**Cursor** — add to `~/.cursor/mcp.json` or project `.cursor/mcp.json`:
 
 ```json
 {
@@ -82,7 +84,9 @@ Add to Cursor MCP settings (`~/.cursor/mcp.json` or project `.cursor/mcp.json`):
 }
 ```
 
-This matches how other stdio MCP servers (e.g. codegraph) are configured. Cursor spawns `ai-router serve`; default transport is **stdio** — no separate terminal, no Node.js.
+This matches how other stdio MCP servers are configured. The client spawns `ai-router serve`; default transport is **stdio** — no separate terminal, no Node.js.
+
+**Claude Code** — add to `~/.claude/settings.json` (or project MCP config) with the same `command` / `args`.
 
 **Prerequisites before connecting:** run `ai-router browser login` once (see above).
 
@@ -115,9 +119,9 @@ Example paths:
 - macOS/Linux: `~/.local/bin/ai-router`
 - Windows: `C:\\Users\\<you>\\.local\\bin\\ai-router.exe`
 
-Reload MCP in Cursor after saving.
+Reload MCP in your client after saving.
 
-### Use in Cursor
+### MCP tools
 
 The agent can call these MCP tools:
 
@@ -132,7 +136,7 @@ Login is **CLI only** — there is no MCP `login` tool. Run `ai-router browser l
 
 **Conversation behavior:**
 
-Each `ask` opens a **new** provider chat. Follow-up context is not preserved across calls. Cursor conversation context and provider chat context are separate; ai-router does not reuse the previous provider chat. Browser login (Google session) is persistent via `~/.ai-router/profile/`.
+Each `ask` opens a **new** provider chat. Follow-up context is not preserved across calls. Your MCP client's conversation and the provider's web chat are separate; ai-router does not reuse the previous provider chat. Browser login is persistent via `~/.ai-router/profile/`.
 
 ## CLI reference
 
@@ -145,7 +149,7 @@ ai-router browser status [--provider gemini]
 
 | Transport | Use case |
 |-----------|----------|
-| `stdio` (default) | Cursor MCP — `args: ["serve"]` |
+| `stdio` (default) | MCP clients — `args: ["serve"]` |
 | `http` | Local debugging only — see below |
 
 ## Config (optional)
@@ -179,21 +183,21 @@ Environment variable overrides:
 |---------|-----|
 | `pipx: command not found` right after install | Use `python -m pipx` instead |
 | `ai-router: command not found` in terminal | Run `python -m pipx ensurepath` and open a new terminal |
-| Cursor MCP red / cannot find `ai-router` | Use full path in `"command"` (see above) |
-| Cursor MCP fails mysteriously | Stdio stdout must be MCP-only — no startup banner on stdout |
+| MCP client red / cannot find `ai-router` | Use full path in `"command"` (see above) |
+| MCP client fails mysteriously | Stdio stdout must be MCP-only — no startup banner on stdout |
 | `pipx install mcp-ai-router` fails | Check https://pypi.org/project/mcp-ai-router/ is reachable |
 | `gemini: logged_out` | Run `ai-router browser login` again |
 | `NOT_LOGGED_IN` from `ask` | Run `ai-router browser login` |
 | Slow first `ask` / first login | Expected — CloakBrowser may download ~200 MB to `~/.cloakbrowser/` on first browser launch |
 | Browser does not open | Requires `cloakbrowser` ≥ 0.4.4; check network and disk space for first download |
 | `BROWSER_BUSY` | Wait for the current `ask` to finish |
-| Slow first `ask` after Cursor restart | Expected cold start; browser tabs are in-memory only |
+| Slow first `ask` after MCP restart | Expected cold start; browser tabs are in-memory only |
 | Profile lock / browser errors | Possible concurrent MCP processes — run one active server |
 | Need HTTP debug | `ai-router serve --transport http` |
 
 ### HTTP debug (advanced)
 
-Not needed for Cursor. Requires a separate terminal and optional Node.js bridge:
+Not needed for stdio MCP. Requires a separate terminal and optional Node.js bridge:
 
 ```bash
 ai-router serve --transport http
