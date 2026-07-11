@@ -2,7 +2,11 @@
 
 Python MCP server that routes prompts to web AI providers (Gemini, ChatGPT*) via CloakBrowser.
 
-**PyPI package:** `mcp-ai-router` · **CLI command:** `ai-router`
+| | Name |
+|---|------|
+| **PyPI / pipx** | [`mcp-ai-router`](https://pypi.org/project/mcp-ai-router/) |
+| **CLI command** | `ai-router` |
+| **GitHub** | [scriptkid23/ai-router](https://github.com/scriptkid23/ai-router) |
 
 \* ChatGPT is registered but not implemented in v1.
 
@@ -14,14 +18,18 @@ Python MCP server that routes prompts to web AI providers (Gemini, ChatGPT*) via
 | [pipx](https://pypa.github.io/pipx/) | latest |
 | Chrome | stable channel |
 
+No Poetry, Node.js, or repo clone required for normal use.
+
 ## Install
 
 ```bash
 python -m pip install --user pipx
 python -m pipx ensurepath
-# restart terminal
+# open a new terminal
 pipx install mcp-ai-router
 ```
+
+`pipx ensurepath` adds `~/.local/bin` to your shell PATH so `ai-router` works in the terminal.
 
 Verify:
 
@@ -31,6 +39,12 @@ ai-router --help
 ```
 
 On first browser launch, CloakBrowser downloads a stealth Chromium binary (~200 MB) to `~/.cloakbrowser/`. You do **not** need to run `playwright install`.
+
+Upgrade later:
+
+```bash
+pipx upgrade mcp-ai-router
+```
 
 ### Login to Gemini (one-time)
 
@@ -52,9 +66,29 @@ ai-router browser status
 
 Expected output: `gemini: logged_in`
 
-### Connect Cursor
+### Connect Cursor (stdio — recommended)
 
-GUI apps (Cursor on Windows/macOS) often use a PATH that differs from your shell. Use the **exact path** from your system:
+Add to Cursor MCP settings (`~/.cursor/mcp.json` or project `.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "ai-router": {
+      "type": "stdio",
+      "command": "ai-router",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+This matches how other stdio MCP servers (e.g. codegraph) are configured. Cursor spawns `ai-router serve`; default transport is **stdio** — no separate terminal, no Node.js.
+
+**Prerequisites before connecting:** run `ai-router browser login` once (see above).
+
+#### If `"command": "ai-router"` fails
+
+GUI apps sometimes use a different PATH than your terminal. Use the full path instead:
 
 ```bash
 # macOS/Linux
@@ -64,12 +98,11 @@ command -v ai-router
 where ai-router
 ```
 
-Add to Cursor MCP settings (`mcp.json`):
-
 ```json
 {
   "mcpServers": {
     "ai-router": {
+      "type": "stdio",
       "command": "/full/path/from-command-v-or-where",
       "args": ["serve"]
     }
@@ -77,18 +110,12 @@ Add to Cursor MCP settings (`mcp.json`):
 }
 ```
 
-Example paths (yours may differ):
+Example paths:
 
 - macOS/Linux: `~/.local/bin/ai-router`
 - Windows: `C:\\Users\\<you>\\.local\\bin\\ai-router.exe`
 
-No separate terminal for the server. Login remains CLI-only (`ai-router browser login`).
-
-Upgrade:
-
-```bash
-pipx upgrade mcp-ai-router
-```
+Reload MCP in Cursor after saving.
 
 ### Use in Cursor
 
@@ -116,7 +143,10 @@ ai-router browser login [--provider gemini]
 ai-router browser status [--provider gemini]
 ```
 
-Default transport is `stdio` (for Cursor). Use `--transport http` for debugging.
+| Transport | Use case |
+|-----------|----------|
+| `stdio` (default) | Cursor MCP — `args: ["serve"]` |
+| `http` | Local debugging only — see below |
 
 ## Config (optional)
 
@@ -148,10 +178,10 @@ Environment variable overrides:
 | Problem | Fix |
 |---------|-----|
 | `pipx: command not found` right after install | Use `python -m pipx` instead |
-| `ai-router: command not found` | Run `python -m pipx ensurepath` and open a new terminal |
-| Cursor cannot find `ai-router` | Paste exact path from `command -v ai-router` / `where ai-router` |
-| Cursor MCP fails mysteriously | Stdio stdout must be MCP-only — ensure no startup banner on stdout |
-| `pipx install mcp-ai-router` fails | Package may not be on PyPI yet, or name taken |
+| `ai-router: command not found` in terminal | Run `python -m pipx ensurepath` and open a new terminal |
+| Cursor MCP red / cannot find `ai-router` | Use full path in `"command"` (see above) |
+| Cursor MCP fails mysteriously | Stdio stdout must be MCP-only — no startup banner on stdout |
+| `pipx install mcp-ai-router` fails | Check https://pypi.org/project/mcp-ai-router/ is reachable |
 | `gemini: logged_out` | Run `ai-router browser login` again |
 | `NOT_LOGGED_IN` from `ask` | Run `ai-router browser login` |
 | Browser does not open | Requires `cloakbrowser` ≥ 0.4.4 |
@@ -162,14 +192,21 @@ Environment variable overrides:
 
 ### HTTP debug (advanced)
 
+Not needed for Cursor. Requires a separate terminal and optional Node.js bridge:
+
 ```bash
 ai-router serve --transport http
 ```
 
-Optional bridge (requires Node.js):
-
-```bash
-npx -y mcp-remote@latest http://127.0.0.1:8087/mcp
+```json
+{
+  "mcpServers": {
+    "ai-router": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote@latest", "http://127.0.0.1:8087/mcp"]
+    }
+  }
+}
 ```
 
 ## Development
@@ -195,21 +232,22 @@ Build and smoke-test a wheel locally:
 
 ```bash
 poetry build
-pipx install --force dist/ai_router-*.whl
+pipx install --force dist/mcp_ai_router-*.whl
 mkdir -p /tmp/ai-router-smoke && cd /tmp/ai-router-smoke
 ai-router --help
 ai-router --version
 ai-router browser status
 ```
 
-Publish:
+Publish to PyPI (package name `mcp-ai-router`; PyPI renders this README as the project description):
 
 ```bash
 poetry check
-poetry publish -r testpypi   # dry run
+poetry build
+poetry publish -r testpypi   # optional dry run
 poetry publish
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 ## Security
