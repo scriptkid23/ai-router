@@ -1,14 +1,12 @@
 # ai-router
 
-Python MCP server that routes prompts to web AI providers (Gemini, ChatGPT*) via CloakBrowser.
+Python MCP server that routes prompts to web AI providers (Gemini, ChatGPT) via CloakBrowser.
 
 | | Name |
 |---|------|
 | **PyPI / pipx** | [`mcp-ai-router`](https://pypi.org/project/mcp-ai-router/) |
 | **CLI command** | `ai-router` |
 | **GitHub** | [scriptkid23/ai-router](https://github.com/scriptkid23/ai-router) |
-
-\* ChatGPT is registered but not implemented in v1.
 
 ## Requirements
 
@@ -46,14 +44,14 @@ Upgrade later:
 pipx upgrade mcp-ai-router
 ```
 
-### Login to Gemini (one-time)
+### Login (one-time)
 
 ```bash
 ai-router browser login
 ```
 
-1. A headed Chrome window opens at Gemini.
-2. Log in with your Google account.
+1. Headed Chrome windows open for each available provider (Gemini, ChatGPT).
+2. Log in to each provider.
 3. Close **all** browser windows when done.
 
 Session is saved to `~/.ai-router/profile/`.
@@ -64,7 +62,7 @@ Verify login:
 ai-router browser status
 ```
 
-Expected output: `gemini: logged_in`
+Expected output: `gemini: logged_in` and/or `chatgpt: logged_in`
 
 ### Connect Cursor (stdio — recommended)
 
@@ -123,9 +121,9 @@ The agent can call these MCP tools:
 
 | Tool | Description |
 |------|-------------|
-| `ask` | Send a prompt, get raw text answer from Gemini |
+| `ask` | Send a prompt, get raw text answer (default: Gemini; use `provider` param for ChatGPT) |
 | `ask_multi` | Send one prompt to several providers in parallel |
-| `list_providers` | List providers (`gemini` = available, `chatgpt` = coming_soon) |
+| `list_providers` | List providers (`gemini`, `chatgpt`) |
 | `session_status` | Check whether providers are logged in |
 
 Login is **CLI only** — there is no MCP `login` tool. Run `ai-router browser login` manually.
@@ -253,9 +251,4 @@ git push origin v0.1.2
 ## Security
 
 - HTTP server binds to `127.0.0.1` only (localhost).
-- Profile dir (`~/.ai-router/profile/`) contains live Google session credentials — treat it like a password.
-
-## Branches
-
-- `python` — current Python rewrite (this README)
-- `main` — previous TypeScript implementation
+- Profile dir (`~/.ai-router/profile/`) contains live session credentials — treat it like a password.
