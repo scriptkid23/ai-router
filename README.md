@@ -2,6 +2,8 @@
 
 Python MCP server that routes prompts to web AI providers (Gemini, ChatGPT*) via CloakBrowser.
 
+**PyPI package:** `mcp-ai-router` · **CLI command:** `ai-router`
+
 \* ChatGPT is registered but not implemented in v1.
 
 ## Requirements
@@ -18,7 +20,7 @@ Python MCP server that routes prompts to web AI providers (Gemini, ChatGPT*) via
 python -m pip install --user pipx
 python -m pipx ensurepath
 # restart terminal
-pipx install ai-router
+pipx install mcp-ai-router
 ```
 
 Verify:
@@ -85,7 +87,7 @@ No separate terminal for the server. Login remains CLI-only (`ai-router browser 
 Upgrade:
 
 ```bash
-pipx upgrade ai-router
+pipx upgrade mcp-ai-router
 ```
 
 ### Use in Cursor
@@ -149,7 +151,7 @@ Environment variable overrides:
 | `ai-router: command not found` | Run `python -m pipx ensurepath` and open a new terminal |
 | Cursor cannot find `ai-router` | Paste exact path from `command -v ai-router` / `where ai-router` |
 | Cursor MCP fails mysteriously | Stdio stdout must be MCP-only — ensure no startup banner on stdout |
-| `pipx install ai-router` fails | Package may not be on PyPI yet, or name taken |
+| `pipx install mcp-ai-router` fails | Package may not be on PyPI yet, or name taken |
 | `gemini: logged_out` | Run `ai-router browser login` again |
 | `NOT_LOGGED_IN` from `ask` | Run `ai-router browser login` |
 | Browser does not open | Requires `cloakbrowser` ≥ 0.4.4 |
@@ -206,8 +208,8 @@ Publish:
 poetry check
 poetry publish -r testpypi   # dry run
 poetry publish
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 ## Security

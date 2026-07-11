@@ -9,7 +9,7 @@ from ai_router.cli.serve import serve_cmd
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(importlib.metadata.version("ai-router"))
+        typer.echo(importlib.metadata.version("mcp-ai-router"))
         raise typer.Exit()
 
 
