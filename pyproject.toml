@@ -2,15 +2,25 @@
 name = "ai-router"
 version = "0.1.0"
 description = "MCP server routing prompts to web AI providers via CloakBrowser"
-authors = []
+authors = ["Olivier Taylor <olivier.taylor.work@gmail.com>"]
+license = "MIT"
 readme = "README.md"
+homepage = "https://github.com/scriptkid23/ai-router"
+repository = "https://github.com/scriptkid23/ai-router"
+keywords = ["mcp", "gemini", "ai", "cursor"]
 packages = [{ include = "ai_router", from = "src" }]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.11,<4"
 typer = { extras = ["all"], version = "^0.15" }
 cloakbrowser = "^0.4.10"
-mcp = "^1.6"
+mcp = ">=1.6,<2"
 uvicorn = "^0.30"
 pyyaml = "^6.0"
 
@@ -20,7 +30,7 @@ pytest-asyncio = "^0.24"
 ruff = "^0.6"
 
 [tool.poetry.scripts]
-ai = "ai_router.cli.main:app"
+ai-router = "ai_router.cli.main:app"
 
 [build-system]
 requires = ["poetry-core"]

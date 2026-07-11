@@ -3,6 +3,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from ai_router.config import load_config
 from ai_router.errors import AiRouterError
 from ai_router.logger import configure
+from ai_router.mcp.transport import Transport
 from ai_router.mcp.tools import (
     create_app_state,
     handle_ask,
@@ -83,7 +84,18 @@ def create_mcp_app(host: str, port: int) -> FastMCP:
     return mcp
 
 
-def run_server(host: str | None = None, port: int | None = None) -> None:
+def run_server(
+    host: str | None = None,
+    port: int | None = None,
+    transport: Transport = Transport.STDIO,
+) -> None:
     cfg = load_config()
-    mcp = create_mcp_app(host or cfg.host, port or cfg.port)
+    bind_host = host or cfg.host
+    bind_port = port or cfg.port
+    mcp = create_mcp_app(bind_host, bind_port)
+
+    if transport is Transport.STDIO:
+        mcp.run(transport="stdio")
+        return
+
     mcp.run(transport="streamable-http")
