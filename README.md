@@ -36,7 +36,9 @@ ai-router --version
 ai-router --help
 ```
 
-On first browser launch, CloakBrowser downloads a stealth Chromium binary (~200 MB) to `~/.cloakbrowser/`. You do **not** need to run `playwright install`.
+> **CloakBrowser download (first use)**  
+> `pipx install` does **not** download the browser binary. On the **first** command that opens a browser (`ai-router browser login` or the first `ask` in Cursor), CloakBrowser automatically downloads a stealth Chromium binary (~200 MB) to `~/.cloakbrowser/`. This is a one-time download per machine (unless CloakBrowser updates the binary version).  
+> You do **not** need to run `playwright install`. Stable Chrome must be installed on the system, but the automation uses the CloakBrowser-managed binary, not your local Chrome app.
 
 Upgrade later:
 
@@ -182,7 +184,8 @@ Environment variable overrides:
 | `pipx install mcp-ai-router` fails | Check https://pypi.org/project/mcp-ai-router/ is reachable |
 | `gemini: logged_out` | Run `ai-router browser login` again |
 | `NOT_LOGGED_IN` from `ask` | Run `ai-router browser login` |
-| Browser does not open | Requires `cloakbrowser` ≥ 0.4.4 |
+| Slow first `ask` / first login | Expected — CloakBrowser may download ~200 MB to `~/.cloakbrowser/` on first browser launch |
+| Browser does not open | Requires `cloakbrowser` ≥ 0.4.4; check network and disk space for first download |
 | `BROWSER_BUSY` | Wait for the current `ask` to finish |
 | Slow first `ask` after Cursor restart | Expected cold start; browser tabs are in-memory only |
 | Profile lock / browser errors | Possible concurrent MCP processes — run one active server |
