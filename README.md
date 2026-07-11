@@ -1,4 +1,4 @@
-# ai-router
+# AI router
 
 **About:** ai-router is a stdio MCP server that lets AI coding agents (Cursor, Claude Code, Claude Desktop, and other MCP clients) send prompts to **Gemini** and **ChatGPT** through real browser sessions — no API keys. Install with `pipx install mcp-ai-router`, log in once via CLI, then connect your MCP client with `args: ["serve"]`.
 
