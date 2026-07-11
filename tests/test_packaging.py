@@ -3,6 +3,11 @@ from pathlib import Path
 import tomllib
 
 
+def test_distribution_name_is_mcp_ai_router():
+    data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    assert data["tool"]["poetry"]["name"] == "mcp-ai-router"
+
+
 def test_console_script_is_ai_router_only():
     data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     scripts = data["tool"]["poetry"]["scripts"]

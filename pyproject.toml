@@ -1,6 +1,6 @@
 [tool.poetry]
-name = "ai-router"
-version = "0.1.0"
+name = "mcp-ai-router"
+version = "0.1.1"
 description = "MCP server routing prompts to web AI providers via CloakBrowser"
 authors = ["Olivier Taylor <olivier.taylor.work@gmail.com>"]
 license = "MIT"
