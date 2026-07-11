@@ -1,171 +1,221 @@
 # ai-router
 
-MCP server that routes prompts to **ChatGPT**, **Gemini**, and **NotebookLM** using your existing browser sessions via [CloakBrowser](https://github.com/CloakHQ/cloakbrowser).
+Python MCP server that routes prompts to web AI providers (Gemini, ChatGPT*) via CloakBrowser.
 
-## Prerequisites
+\* ChatGPT is registered but not implemented in v1.
 
-- Node.js 20+
-- First run downloads CloakBrowser Chromium binary (~200MB) to `~/.cloakbrowser`
+## Requirements
+
+| Tool | Version |
+|------|---------|
+| Python | 3.11+ |
+| [pipx](https://pypa.github.io/pipx/) | latest |
+| Chrome | stable channel |
 
 ## Install
 
 ```bash
-npm install
-npm run build
+python -m pip install --user pipx
+python -m pipx ensurepath
+# restart terminal
+pipx install ai-router
 ```
 
-## Start server
+Verify:
 
 ```bash
-npm run serve
+ai-router --version
+ai-router --help
 ```
 
-Server listens at `http://127.0.0.1:8087/mcp/sse`.
+On first browser launch, CloakBrowser downloads a stealth Chromium binary (~200 MB) to `~/.cloakbrowser/`. You do **not** need to run `playwright install`.
 
-Health check: `curl http://127.0.0.1:8087/health`
+### Login to Gemini (one-time)
 
-## Cursor MCP configuration
+```bash
+ai-router browser login
+```
 
-Add to your Cursor MCP settings:
+1. A headed Chrome window opens at Gemini.
+2. Log in with your Google account.
+3. Close **all** browser windows when done.
+
+Session is saved to `~/.ai-router/profile/`.
+
+Verify login:
+
+```bash
+ai-router browser status
+```
+
+Expected output: `gemini: logged_in`
+
+### Connect Cursor
+
+GUI apps (Cursor on Windows/macOS) often use a PATH that differs from your shell. Use the **exact path** from your system:
+
+```bash
+# macOS/Linux
+command -v ai-router
+
+# Windows
+where ai-router
+```
+
+Add to Cursor MCP settings (`mcp.json`):
 
 ```json
 {
   "mcpServers": {
     "ai-router": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote@latest", "http://127.0.0.1:8087/mcp/sse"]
+      "command": "/full/path/from-command-v-or-where",
+      "args": ["serve"]
     }
   }
 }
 ```
 
-Start `npm run serve` **before** connecting Cursor.
+Example paths (yours may differ):
 
-## Workflow
+- macOS/Linux: `~/.local/bin/ai-router`
+- Windows: `C:\\Users\\<you>\\.local\\bin\\ai-router.exe`
 
-1. **Start server** — `npm run serve`
-2. **Login** — Agent calls `login` → browser **opens visibly** → log in to ChatGPT, Gemini, NotebookLM → close browser
-3. **Ask** — Agent calls `ask` → runs **headless** by default (no window)
-4. **Check sessions** — `session_status` or `list_providers`
+No separate terminal for the server. Login remains CLI-only (`ai-router browser login`).
 
-## MCP tools
+Upgrade:
+
+```bash
+pipx upgrade ai-router
+```
+
+### Use in Cursor
+
+The agent can call these MCP tools:
 
 | Tool | Description |
 |------|-------------|
-| `login` | Open **visible** browser with provider tabs for manual login |
-| `ask` | Send prompt to provider, return response (headless by default) |
-| `list_providers` | List providers and routing keywords |
-| `session_status` | Check login state per provider (headless by default) |
+| `ask` | Send a prompt, get raw text answer from Gemini |
+| `ask_multi` | Send one prompt to several providers in parallel |
+| `list_providers` | List providers (`gemini` = available, `chatgpt` = coming_soon) |
+| `session_status` | Check whether providers are logged in |
 
-### `ask` parameters
+Login is **CLI only** — there is no MCP `login` tool. Run `ai-router browser login` manually.
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `prompt` | yes | Question or instruction to send |
-| `provider` | no | `chatgpt`, `gemini`, or `notebooklm` — omit to use keyword routing + default |
-| `timeout_ms` | no | Max wait for response (default: `timeouts.ask_ms`, 120000) |
-| `prompt_input_mode` | no | `fill` (default, paste whole prompt) or `type` (human-like keystrokes) |
+**Conversation behavior:**
 
-## Configuration
+Each `ask` opens a **new** provider chat. Follow-up context is not preserved across calls. Cursor conversation context and provider chat context are separate; ai-router does not reuse the previous provider chat. Browser login (Google session) is persistent via `~/.ai-router/profile/`.
 
-Config file: `~/.ai-router/config.json` (auto-created on first run with defaults below).
-
-### Default config
-
-```json
-{
-  "server": {
-    "host": "127.0.0.1",
-    "port": 8087,
-    "path": "/mcp/sse",
-    "messagesPath": "/mcp/messages"
-  },
-  "defaultProvider": "chatgpt",
-  "profileDir": "~/.ai-router/profile",
-  "timeouts": {
-    "ask_ms": 120000,
-    "session_check_ms": 30000
-  },
-  "routing": {
-    "keywords": {
-      "gemini": ["gemini", "@gemini", "hỏi gemini"],
-      "notebooklm": ["notebooklm", "notebook lm", "@notebooklm"],
-      "chatgpt": ["chatgpt", "gpt", "@chatgpt"]
-    }
-  },
-  "providers": {
-    "notebooklm": {
-      "notebook_url": null
-    }
-  },
-  "browser": {
-    "fingerprint_seed": "42069",
-    "humanize": true,
-    "headless": true,
-    "prompt_input_mode": "fill",
-    "type_delay_ms": 20
-  }
-}
-```
-
-Only include keys you want to override — missing keys keep defaults.
-
-### Config reference
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `server.host` | `127.0.0.1` | MCP server bind address (localhost only) |
-| `server.port` | `8087` | MCP server port |
-| `server.path` | `/mcp/sse` | SSE endpoint for `mcp-remote` |
-| `defaultProvider` | `chatgpt` | Provider when prompt has no keyword match |
-| `profileDir` | `~/.ai-router/profile` | CloakBrowser persistent profile (cookies) |
-| `timeouts.ask_ms` | `120000` | Default timeout for `ask` (ms) |
-| `timeouts.session_check_ms` | `30000` | Timeout for `session_status` checks |
-| `routing.keywords` | see above | Keyword → provider mapping for auto-routing |
-| `providers.notebooklm.notebook_url` | `null` | Open this notebook URL; `null` = first notebook in list |
-| `browser.fingerprint_seed` | `42069` | Fixed CloakBrowser fingerprint across runs |
-| `browser.humanize` | `true` | Human-like mouse/keyboard via CloakBrowser |
-| `browser.headless` | `true` | Hide browser for `ask` / `session_status`. `login` is always visible |
-| `browser.prompt_input_mode` | `fill` | `fill` = paste prompt at once; `type` = keystroke simulation |
-| `browser.type_delay_ms` | `20` | Per-key delay when `prompt_input_mode` is `type` |
-
-### Environment overrides
-
-| Variable | Effect |
-|----------|--------|
-| `AI_ROUTER_PROFILE_DIR` | Override `profileDir` |
-| `AI_ROUTER_DEFAULT_PROVIDER` | Override `defaultProvider` |
-| `AI_ROUTER_PORT` | Override `server.port` |
-| `AI_ROUTER_HOST` | Override `server.host` |
-| `AI_ROUTER_HEADLESS` | `true` / `false` — override `browser.headless` |
-| `AI_ROUTER_LOG_LEVEL` | `error`, `warn`, `info`, `debug` |
-| `AI_ROUTER_DEBUG` | `1` — save HTML dumps on adapter errors to `~/.ai-router/debug/` |
-
-Example — longer timeout and visible browser for debugging:
-
-```json
-{
-  "timeouts": { "ask_ms": 300000 },
-  "browser": { "headless": false }
-}
-```
-
-Or via env when starting the server:
+## CLI reference
 
 ```bash
-AI_ROUTER_HEADLESS=true npm run serve
+ai-router --version
+ai-router serve [--transport stdio|http] [--host 127.0.0.1] [--port 8087]
+ai-router browser login [--provider gemini]
+ai-router browser status [--provider gemini]
+```
+
+Default transport is `stdio` (for Cursor). Use `--transport http` for debugging.
+
+## Config (optional)
+
+Create `~/.ai-router/config.yaml`:
+
+```yaml
+default_provider: gemini
+host: 127.0.0.1
+port: 8087
+answer_timeout_s: 120
+profile_dir: ~/.ai-router/profile
+providers:
+  gemini:
+    url: https://gemini.google.com/app
+```
+
+Environment variable overrides:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AI_ROUTER_PROFILE_DIR` | `~/.ai-router/profile` | CloakBrowser persistent profile |
+| `AI_ROUTER_DEFAULT_PROVIDER` | `gemini` | Default provider for `ask` |
+| `AI_ROUTER_HOST` | `127.0.0.1` | MCP HTTP server bind address |
+| `AI_ROUTER_PORT` | `8087` | MCP HTTP server port |
+| `AI_ROUTER_ANSWER_TIMEOUT_S` | `120` | Per-request answer timeout |
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `pipx: command not found` right after install | Use `python -m pipx` instead |
+| `ai-router: command not found` | Run `python -m pipx ensurepath` and open a new terminal |
+| Cursor cannot find `ai-router` | Paste exact path from `command -v ai-router` / `where ai-router` |
+| Cursor MCP fails mysteriously | Stdio stdout must be MCP-only — ensure no startup banner on stdout |
+| `pipx install ai-router` fails | Package may not be on PyPI yet, or name taken |
+| `gemini: logged_out` | Run `ai-router browser login` again |
+| `NOT_LOGGED_IN` from `ask` | Run `ai-router browser login` |
+| Browser does not open | Requires `cloakbrowser` ≥ 0.4.4 |
+| `BROWSER_BUSY` | Wait for the current `ask` to finish |
+| Slow first `ask` after Cursor restart | Expected cold start; browser tabs are in-memory only |
+| Profile lock / browser errors | Possible concurrent MCP processes — run one active server |
+| Need HTTP debug | `ai-router serve --transport http` |
+
+### HTTP debug (advanced)
+
+```bash
+ai-router serve --transport http
+```
+
+Optional bridge (requires Node.js):
+
+```bash
+npx -y mcp-remote@latest http://127.0.0.1:8087/mcp
+```
+
+## Development
+
+Maintainers use Poetry in a repo checkout:
+
+```bash
+git clone https://github.com/scriptkid23/ai-router.git
+cd ai-router
+poetry install
+poetry run pytest -v
+poetry run ruff check src tests
+poetry run ai-router serve --transport http   # local HTTP debug
+```
+
+Before release, test against:
+
+- The `mcp` version locked in `poetry.lock` (currently 1.12.4)
+- Latest stable `mcp` `<2`
+- A clean wheel install from an empty directory outside the repo
+
+Build and smoke-test a wheel locally:
+
+```bash
+poetry build
+pipx install --force dist/ai_router-*.whl
+mkdir -p /tmp/ai-router-smoke && cd /tmp/ai-router-smoke
+ai-router --help
+ai-router --version
+ai-router browser status
+```
+
+Publish:
+
+```bash
+poetry check
+poetry publish -r testpypi   # dry run
+poetry publish
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 ## Security
 
-- Profile at `~/.ai-router/profile/` contains live session cookies — treat as credentials
-- Server binds `127.0.0.1` only — do not expose to the network
-- Debug screenshots saved to `~/.ai-router/debug/` on adapter errors
+- HTTP server binds to `127.0.0.1` only (localhost).
+- Profile dir (`~/.ai-router/profile/`) contains live Google session credentials — treat it like a password.
 
-## Development
+## Branches
 
-```bash
-npm test
-npm run typecheck
-npm run build
-```
+- `python` — current Python rewrite (this README)
+- `main` — previous TypeScript implementation
