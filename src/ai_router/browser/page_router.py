@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from playwright.async_api import Page
@@ -29,6 +30,7 @@ class PageRouter:
         self._pages: dict[str, Page] = {}
         self._warmed: set[str] = set()
         self._status_page: Page | None = None
+        self._pin_lock = asyncio.Lock()
 
     async def page_for(self, adapter: "ProviderAdapter") -> Page:
         page = self._pages.get(adapter.id)
@@ -38,11 +40,24 @@ class PageRouter:
             self._warmed.discard(adapter.id)
             page = None
         if page is None:
-            if len(self._pages) >= self._max_pages:
-                raise AiRouterError("BROWSER_BUSY", "Maximum pinned tabs reached")
-            page = await self._adopt_or_create()
-            self._pages[adapter.id] = page
-            trace("router_pin_created", provider=adapter.id, page_id=page_id_of(page))
+            async with self._pin_lock:
+                page = self._pages.get(adapter.id)
+                if page is not None and page.is_closed():
+                    self._pages.pop(adapter.id, None)
+                    self._warmed.discard(adapter.id)
+                    page = None
+                if page is None:
+                    if len(self._pages) >= self._max_pages:
+                        raise AiRouterError(
+                            "BROWSER_BUSY", "Maximum pinned tabs reached"
+                        )
+                    page = await self._adopt_or_create()
+                    self._pages[adapter.id] = page
+                    trace(
+                        "router_pin_created",
+                        provider=adapter.id,
+                        page_id=page_id_of(page),
+                    )
         if adapter.id not in self._warmed:
             status = await adapter.ensure_page_ready(page)
             if status == SessionStatus.LOGGED_OUT:
@@ -53,7 +68,9 @@ class PageRouter:
 
     async def status_page(self) -> Page:
         if self._status_page is None or self._status_page.is_closed():
-            self._status_page = await self._adopt_or_create()
+            async with self._pin_lock:
+                if self._status_page is None or self._status_page.is_closed():
+                    self._status_page = await self._adopt_or_create()
         return self._status_page
 
     async def _adopt_or_create(self) -> Page:

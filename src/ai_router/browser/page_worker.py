@@ -130,6 +130,7 @@ class PageWorker:
                     ok=ev.payload.get("ok", True),
                     error_kind=ev.payload.get("error_kind"),
                     error_text=ev.payload.get("error_text"),
+                    answer_text=ev.payload.get("answer_text"),
                 )
             elif ev.kind == "dom_tick":
                 self._reducer.apply_dom_tick(

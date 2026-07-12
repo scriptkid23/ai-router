@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from playwright.async_api import Page
 
@@ -33,10 +34,44 @@ def is_stream_end(body: str) -> bool:
     return bool(STREAM_END_RE.search(body))
 
 
+def extract_stream_answer(body: str) -> str | None:
+    """Best-effort answer text from a finished StreamGenerate body."""
+    if not is_stream_end(body):
+        return None
+    candidates: list[str] = []
+    for match in re.finditer(r'"((?:[^"\\]|\\.)*)"', body):
+        raw = match.group(1)
+        if len(raw) < 20:
+            continue
+        try:
+            text = json.loads(f'"{raw}"')
+        except json.JSONDecodeError:
+            text = raw.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
+        if not isinstance(text, str):
+            continue
+        stripped = text.strip()
+        if len(stripped) < 20:
+            continue
+        if stripped.startswith("http") or stripped.startswith("rc_"):
+            continue
+        if stripped[0] in "[{":
+            continue
+        if re.fullmatch(r"[\w\-.:]+", stripped):
+            continue
+        candidates.append(stripped)
+    if not candidates:
+        return None
+    return max(candidates, key=len)
+
+
 def parse_stream_done(status: int, body: str) -> StreamDone:
     """Gemini StreamGenerate: done when the end-of-turn ["e", ...] tag appears."""
     if is_stream_end(body):
-        return StreamDone(done=True, ok=True)
+        return StreamDone(
+            done=True,
+            ok=True,
+            answer_text=extract_stream_answer(body),
+        )
     return StreamDone(done=False, ok=False)
 
 

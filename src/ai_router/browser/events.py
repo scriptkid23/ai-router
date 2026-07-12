@@ -96,6 +96,7 @@ async def handle_response(
             ok=result.ok,
             error_kind=result.error_kind,
             error_text=result.error_text,
+            answer_text=result.answer_text,
         )
 
 
@@ -141,6 +142,7 @@ def attach_listeners(
                             ok=result.ok,
                             error_kind=result.error_kind,
                             error_text=result.error_text,
+                            answer_text=result.answer_text,
                         )
                     )
                     break
