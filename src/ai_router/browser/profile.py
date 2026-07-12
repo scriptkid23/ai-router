@@ -19,6 +19,7 @@ class StreamDone:
     ok: bool
     error_kind: str | None = None
     error_text: str | None = None
+    answer_text: str | None = None
 
 
 @dataclass(frozen=True)

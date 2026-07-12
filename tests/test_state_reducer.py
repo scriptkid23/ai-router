@@ -135,3 +135,50 @@ def test_stream_end_requires_stream_after_submit():
     )
     r.apply_stream_end()
     assert r.state.saw_stream_end_this_job is True
+
+
+def test_reset_job_cycle_clears_stale_state():
+    r = StateReducer(
+        page_id="test",
+        stream_url_res=[STREAM_RE],
+        idle_streak_required=3,
+        generating_streak_required=2,
+        answer_stable_ticks=2,
+        stream_quiet_s=1.5,
+        error_markers=(),
+    )
+    for _ in range(5):
+        r.apply_dom_tick(
+            generating=False, response_count=1, response_text="old", error_text=None
+        )
+    assert r.state.idle_streak == 5
+    assert r.state.response_count == 1
+    r.reset_job_cycle()
+    assert r.state.idle_streak == 0
+    assert r.state.phase == "idle"
+    assert r.state.response_count == 0
+    assert r.state.last_response_text == ""
+    assert r.state.stream_answer_text is None
+
+
+def test_answer_ready_with_stream_text_when_dom_lags():
+    r = StateReducer(
+        page_id="test",
+        stream_url_res=[STREAM_RE],
+        idle_streak_required=6,
+        generating_streak_required=2,
+        answer_stable_ticks=2,
+        stream_quiet_s=0.0,
+        error_markers=(),
+    )
+    r.mark_submitting()
+    r.apply_request_finished(
+        "https://gemini.google.com/_/BardChatUi/data/"
+        "assistant.lamda.BardFrontendService/StreamGenerate"
+    )
+    r.apply_stream_end(answer_text="answer parsed from stream body")
+    checks = r.answer_ready_checks(before_count=1, generating=False)
+    assert checks["stream_text_fallback"] is True
+    assert checks["new_response"] is True
+    assert r.answer_ready(before_count=1, generating=False) is True
+    assert r.answer_text() == "answer parsed from stream body"
