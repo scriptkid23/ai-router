@@ -164,6 +164,18 @@ async def dom_tick_loop(
     stop_event: asyncio.Event,
 ) -> None:
     while not stop_event.is_set():
-        snapshot = await poll_fn(page)
-        await channel.emit("dom_tick", **snapshot)
+        # A transient page error (e.g. a navigation destroying the execution
+        # context while a poll is in flight) must NOT permanently kill DOM
+        # observation for this worker: log it and keep ticking so the reducer
+        # recovers once the page settles. Without this, one such error freezes
+        # the worker's reducer forever and the idle gate wedges.
+        try:
+            snapshot = await poll_fn(page)
+            await channel.emit("dom_tick", **snapshot)
+        except Exception as exc:
+            trace(
+                "dom_tick_error",
+                page_id=page_id_of(page),
+                error=repr(exc)[:120],
+            )
         await asyncio.sleep(interval_ms / 1000)

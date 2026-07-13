@@ -60,9 +60,38 @@ def create_app_state(config: AppConfig | None = None) -> AppState:
     )
 
 
+def _prune_dead_workers(state: AppState) -> None:
+    """Drop workers whose tab has closed.
+
+    Pinned tabs get dropped and recreated (context resets, crashes) with a
+    fresh page id each time. Without pruning, the dead workers pile up in
+    page_workers and eventually trip BROWSER_BUSY even though only a few tabs
+    are actually live. The getattr guard keeps this a no-op for test doubles
+    that don't expose a real page.
+    """
+    for dead_id, worker in list(state.page_workers.items()):
+        page = getattr(worker, "page", None)
+        if page is None:
+            continue
+        try:
+            closed = page.is_closed()
+        except Exception:
+            closed = False
+        if closed:
+            worker.stop()
+            state.page_workers.pop(dead_id, None)
+            state.page_queues.drop(page)
+            trace(
+                "worker_pruned",
+                page_id=dead_id,
+                worker_count=len(state.page_workers),
+            )
+
+
 def ensure_worker(
     state: AppState, page, default_provider: str | None = None
 ) -> PageWorker:
+    _prune_dead_workers(state)
     pid = page_id_of(page)
     if pid not in state.page_workers:
         if len(state.page_workers) >= state.config.max_pages:

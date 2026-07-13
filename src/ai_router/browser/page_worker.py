@@ -19,6 +19,12 @@ from ai_router.config import AppConfig
 from ai_router.errors import AiRouterError, ProviderNotReadyError
 from ai_router.logger import trace
 
+# Upper bound on how long the between-jobs idle gate will wait for the page to
+# return to a clean idle state before it gives up, resets the reducer, and lets
+# the next job proceed (whose goto+wait_idle re-establishes state or fails
+# loudly). Prevents a wedged reducer from blocking the queue forever.
+_IDLE_GATE_TIMEOUT_S = 120.0
+
 
 class PageWorker:
     def __init__(
@@ -52,6 +58,17 @@ class PageWorker:
         self._stop = asyncio.Event()
         self._task: asyncio.Task | None = None
         self._running_job_id: str | None = None
+
+    @property
+    def page(self) -> Page:
+        return self._page
+
+    def stop(self) -> None:
+        """Signal the run loop to exit and cancel the task (used when the
+        worker's tab has closed and the worker is being pruned)."""
+        self._stop.set()
+        if self._task is not None:
+            self._task.cancel()
 
     def start(self) -> None:
         if self._task is None or self._task.done():
@@ -173,6 +190,7 @@ class PageWorker:
 
     async def _wait_idle_gate(self) -> None:
         last_log = 0.0
+        deadline = time.monotonic() + _IDLE_GATE_TIMEOUT_S
         while True:
             st = self._reducer.state
             stop_visible = await self._stop_visible()
@@ -191,6 +209,22 @@ class PageWorker:
                     running_job_id=self._running_job_id,
                     stop_visible=stop_visible,
                 )
+                return
+            if time.monotonic() > deadline:
+                # The reducer is wedged (e.g. DOM ticks stalled after a page
+                # error). Rather than block the queue forever, reset the job
+                # cycle to a clean baseline and open the gate; the next job's
+                # goto+wait_idle re-establishes state or fails loudly with a
+                # bounded TIMEOUT instead of a silent permanent hang.
+                trace(
+                    "idle_gate_timeout",
+                    page_id=self._page_id,
+                    phase=st.phase,
+                    idle_streak=st.idle_streak,
+                    queue_depth=self._queue.depth(),
+                    stop_visible=stop_visible,
+                )
+                self._reducer.reset_job_cycle()
                 return
             now = time.monotonic()
             if now - last_log >= 3.0:
