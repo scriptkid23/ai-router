@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -141,3 +142,21 @@ async def test_status_page_is_separate_and_stable() -> None:
     s2 = await router.status_page()
     assert s1 is s2
     assert s1 is not pin
+
+
+async def test_concurrent_cold_start_gets_separate_tabs() -> None:
+    ctx = FakeContext(pages=[FakePage()])
+    router = PageRouter(FakeBrowser(ctx), max_pages=10)
+
+    class SlowAdapter(FakeAdapter):
+        async def ensure_page_ready(self, page: FakePage) -> SessionStatus:
+            await asyncio.sleep(0.05)
+            return await super().ensure_page_ready(page)
+
+    gemini, chatgpt = SlowAdapter("gemini"), SlowAdapter("chatgpt")
+    g_page, c_page = await asyncio.gather(
+        router.page_for(gemini),
+        router.page_for(chatgpt),
+    )
+    assert g_page is not c_page
+    assert len(ctx.pages) == 2

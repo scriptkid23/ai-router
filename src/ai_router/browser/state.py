@@ -26,6 +26,7 @@ class BrowserState:
     response_stable_streak: int = 0
     saw_generating_this_job: bool = False
     submitted_at: float | None = None
+    stream_answer_text: str | None = None
 
 
 class StateReducer:
@@ -93,6 +94,12 @@ class StateReducer:
         st.response_stable_streak = 0
         st.error_text = None
         st.error_kind = None
+        st.stream_answer_text = None
+        st.phase = "idle"
+        st.generating_streak = 0
+        st.idle_streak = 0
+        st.response_count = 0
+        st.last_response_text = ""
 
     def _stream_belongs_to_job(self) -> bool:
         st = self.state
@@ -138,6 +145,7 @@ class StateReducer:
         ok: bool = True,
         error_kind: str | None = None,
         error_text: str | None = None,
+        answer_text: str | None = None,
     ) -> None:
         st = self.state
         if st.submitted_at is None:
@@ -164,11 +172,14 @@ class StateReducer:
         st.saw_stream_end_this_job = True
         st.stream_ended_at = time.time()
         st.saw_generating_this_job = True
+        if answer_text:
+            st.stream_answer_text = answer_text
         trace(
             "stream_end",
             page_id=self._page_id,
             job_id=self._job_id,
             url=url[:80] if url else None,
+            answer_len=len(answer_text) if answer_text else None,
         )
 
     def apply_dom_tick(
@@ -224,12 +235,19 @@ class StateReducer:
             and bool(response_text)
         )
 
+    def _effective_answer_text(self, st: BrowserState) -> str:
+        return st.last_response_text or st.stream_answer_text or ""
+
+    def answer_text(self) -> str:
+        return self._effective_answer_text(self.state)
+
     def answer_ready_checks(
         self, *, before_count: int, generating: bool = False
     ) -> dict[str, bool]:
         st = self.state
+        effective_text = self._effective_answer_text(st)
         stream_quiet_ok = self._stream_end_quiet(
-            st, response_text=st.last_response_text, generating=generating
+            st, response_text=effective_text, generating=generating
         )
         idle_ok = (
             st.phase == "idle"
@@ -245,21 +263,39 @@ class StateReducer:
             and not st.saw_stream_end_this_job
             and not generating
             and st.response_stable_streak >= self._no_stream_fallback
-            and bool(st.last_response_text)
+            and bool(effective_text)
+        )
+        # Network stream delivered answer text before DOM caught up.
+        stream_text_fallback_ok = (
+            st.submitted_at is not None
+            and st.saw_stream_end_this_job
+            and not generating
+            and bool(st.stream_answer_text)
+            and st.stream_ended_at is not None
+            and (time.time() - st.stream_ended_at) >= self._stream_quiet_s
         )
         if st.submitted_at is not None:
-            phase_ok = stream_quiet_ok or no_stream_fallback_ok
+            phase_ok = (
+                stream_quiet_ok or no_stream_fallback_ok or stream_text_fallback_ok
+            )
         else:
             phase_ok = idle_ok or stream_quiet_ok
+        new_response = st.response_count > before_count or (
+            st.saw_stream_end_this_job and bool(effective_text)
+        )
+        stable_enough = st.response_stable_streak >= self._answer_stable or (
+            st.saw_stream_end_this_job and bool(st.stream_answer_text)
+        )
         return {
             "saw_generating": st.saw_generating_this_job or st.saw_stream_end_this_job,
-            "new_response": st.response_count > before_count,
+            "new_response": new_response,
             "phase_ok": phase_ok,
-            "stable_enough": st.response_stable_streak >= self._answer_stable,
-            "has_text": bool(st.last_response_text),
+            "stable_enough": stable_enough,
+            "has_text": bool(effective_text),
             "stream_end": st.saw_stream_end_this_job,
             "stream_quiet": stream_quiet_ok,
             "no_stream_fallback": no_stream_fallback_ok,
+            "stream_text_fallback": stream_text_fallback_ok,
         }
 
     def answer_ready(self, *, before_count: int, generating: bool = False) -> bool:

@@ -94,9 +94,8 @@ class CommandExecutor:
                 return answer
             elif cmd.op == "goto":
                 await self._page.goto(cmd.args["url"], wait_until="domcontentloaded")
-                # A goto opens a fresh chat and resets the response list —
-                # rebase the baseline so wait_answer compares against the
-                # NEW chat, not the previous one.
+                # Let the fresh chat DOM settle before rebasing the baseline.
+                await asyncio.sleep(0.3)
                 before_count, _ = await self._profile.read_response_snapshot(self._page)
             trace(
                 "cmd_done",
@@ -285,7 +284,7 @@ class CommandExecutor:
             if self._reducer.answer_ready(
                 before_count=before_count, generating=stop_visible
             ):
-                answer = self._reducer.state.last_response_text
+                answer = self._reducer.answer_text()
                 if self._profile.is_rate_limited(answer):
                     raise RateLimitedError(answer[:200])
                 trace(

@@ -32,6 +32,7 @@ class AppConfig:
     stream_quiet_s: float = 5.0
     dom_tick_interval_ms: int = 500
     chatgpt_answer_timeout_s: float = 300.0
+    claude_answer_timeout_s: float = 300.0
     max_pages: int = 10
     # ask_multi fan-out defaults; empty list = all "available" providers
     parallel_default_providers: list[str] = field(default_factory=list)
@@ -53,6 +54,7 @@ def _defaults() -> AppConfig:
         providers={
             "gemini": ProviderConfig(url="https://gemini.google.com/app"),
             "chatgpt": ProviderConfig(url="https://chatgpt.com/"),
+            "claude": ProviderConfig(url="https://claude.ai/new"),
         },
     )
 
@@ -76,6 +78,8 @@ def load_config(path: Path | None = None) -> AppConfig:
             cfg.stream_quiet_s = float(raw["stream_quiet_s"])
         if "chatgpt_answer_timeout_s" in raw:
             cfg.chatgpt_answer_timeout_s = float(raw["chatgpt_answer_timeout_s"])
+        if "claude_answer_timeout_s" in raw:
+            cfg.claude_answer_timeout_s = float(raw["claude_answer_timeout_s"])
         if "providers" in raw:
             for pid, pdata in raw["providers"].items():
                 cfg.providers[pid] = ProviderConfig(url=pdata["url"])
@@ -102,5 +106,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         cfg.stream_quiet_s = float(v)
     if v := os.getenv("AI_ROUTER_CHATGPT_ANSWER_TIMEOUT_S"):
         cfg.chatgpt_answer_timeout_s = float(v)
+    if v := os.getenv("AI_ROUTER_CLAUDE_ANSWER_TIMEOUT_S"):
+        cfg.claude_answer_timeout_s = float(v)
 
     return cfg

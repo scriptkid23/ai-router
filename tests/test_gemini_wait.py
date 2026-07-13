@@ -1,4 +1,9 @@
-from ai_router.adapters.gemini.wait import braces_balanced, is_rate_limited, is_stream_end
+from ai_router.adapters.gemini.wait import (
+    braces_balanced,
+    extract_stream_answer,
+    is_rate_limited,
+    is_stream_end,
+)
 
 
 def test_braces_balanced_true():
@@ -41,3 +46,13 @@ def test_stream_end_marker_detected():
 
 def test_stream_end_marker_negative():
     assert is_stream_end('["rc_123", "some chunk"]') is False
+
+
+def test_extract_stream_answer_finds_longest_text():
+    body = (
+        'null "short" '
+        '"This is the final Gemini answer with enough length." '
+        '["e", null, null, null]'
+    )
+    text = extract_stream_answer(body)
+    assert text == "This is the final Gemini answer with enough length."
