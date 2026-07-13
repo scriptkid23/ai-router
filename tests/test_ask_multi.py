@@ -96,7 +96,11 @@ def state(monkeypatch):
 
 @pytest.fixture()
 def adapters(monkeypatch):
-    fakes = {"gemini": FakeAdapter("gemini"), "chatgpt": FakeAdapter("chatgpt")}
+    fakes = {
+        "gemini": FakeAdapter("gemini"),
+        "chatgpt": FakeAdapter("chatgpt"),
+        "claude": FakeAdapter("claude"),
+    }
 
     def fake_resolve(registry, provider, default):
         reason = "explicit param" if provider else "default provider"
@@ -125,7 +129,7 @@ async def test_default_providers_are_all_available(state, adapters) -> None:
     res = await handle_ask_multi(
         state, prompt="hi", providers=None, strategy="all", mcp_session_id=None
     )
-    assert sorted(e["provider"] for e in res["answers"]) == ["chatgpt", "gemini"]
+    assert sorted(e["provider"] for e in res["answers"]) == ["chatgpt", "claude", "gemini"]
 
 
 async def test_first_selects_earliest_finisher(state, adapters) -> None:
