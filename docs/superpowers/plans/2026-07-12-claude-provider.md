@@ -589,7 +589,7 @@ class ClaudeAdapter:
                 submit_button=SEL_SUBMIT_BUTTON,
             ),
             error_markers=CLAUDE_ERROR_MARKERS,
-            recoverable_codes=("CLAUDE_ERROR", "CLAUDE_INCOMPLETE"),
+            recoverable_codes=("CLAUDE_ERROR",),
             answer_timeout_s=getattr(cfg, "claude_answer_timeout_s", None),
             parse_ws_frame=None,
         )
@@ -661,7 +661,7 @@ In `src/ai_router/config.py`:
 
 1. Add field to `AppConfig`:
 ```python
-claude_answer_timeout_s: float | None = None
+claude_answer_timeout_s: float = 300.0
 ```
 
 2. Add to `_defaults()` providers dict:
@@ -690,9 +690,8 @@ answer_timeout_s=cfg.claude_answer_timeout_s,
 
 Add to `tests/test_config.py`:
 ```python
-def test_load_config_defaults_includes_claude(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
-    cfg = load_config()
+def test_load_config_defaults_includes_claude(tmp_path):
+    cfg = load_config(tmp_path / "missing.yaml")
     assert "claude" in cfg.providers
     assert cfg.providers["claude"].url == "https://claude.ai/new"
 ```

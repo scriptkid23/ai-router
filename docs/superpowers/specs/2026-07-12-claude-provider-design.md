@@ -80,7 +80,7 @@ ProviderProfile(
         submit_button=SEL_SUBMIT_BUTTON,
     ),
     error_markers=CLAUDE_ERROR_MARKERS,
-    recoverable_codes=("CLAUDE_ERROR", "CLAUDE_INCOMPLETE"),
+    recoverable_codes=("CLAUDE_ERROR",),
     answer_timeout_s=cfg.claude_answer_timeout_s,
     parse_ws_frame=None,
 )
@@ -213,7 +213,7 @@ providers:
     url: "https://claude.ai/new"
 ```
 
-Optional `claude_answer_timeout_s` in `AppConfig` (mirrors `chatgpt_answer_timeout_s`). When unset, falls back to global `answer_timeout_s`.
+`claude_answer_timeout_s` in `AppConfig` (mirrors `chatgpt_answer_timeout_s`). Default `300.0`; YAML/env overrides supported.
 
 Environment variable: `AI_ROUTER_CLAUDE_ANSWER_TIMEOUT_S`.
 
@@ -229,10 +229,11 @@ Environment variable: `AI_ROUTER_CLAUDE_ANSWER_TIMEOUT_S`.
 | Code | Trigger |
 |------|---------|
 | `CLAUDE_ERROR` | DOM error markers or non-recoverable HTTP errors |
-| `CLAUDE_INCOMPLETE` | Stream ended but DOM text not stable or empty |
 | Rate limit | SSE `message_limit` out-of-quota, HTTP 429, or rate-limit markers in body/DOM |
 
-Recoverable codes for planner retry: `("CLAUDE_ERROR", "CLAUDE_INCOMPLETE")`.
+Recoverable codes for planner retry: `("CLAUDE_ERROR",)`.
+
+Partial SSE bodies without `message_stop` / `end_turn` return `done=False` (no `stream_end` event). The job then relies on the DOM no-stream fallback or times out — unlike ChatGPT, there is no `CLAUDE_INCOMPLETE` retry path.
 
 ## Testing
 
