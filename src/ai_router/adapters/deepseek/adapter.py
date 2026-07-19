@@ -14,8 +14,10 @@ from ai_router.adapters.deepseek.selectors import (
 )
 from ai_router.adapters.deepseek.stream import parse_stream_done
 from ai_router.adapters.deepseek.wait import (
+    ensure_active_chat_view,
     ensure_new_chat,
     is_challenge_visible,
+    is_generating_started,
     is_rate_limited,
     is_stop_visible,
     read_response_snapshot,
@@ -66,7 +68,10 @@ class DeepSeekAdapter:
             error_markers=DEEPSEEK_ERROR_MARKERS,
             recoverable_codes=("DEEPSEEK_ERROR",),
             answer_timeout_s=cfg.deepseek_answer_timeout_s,
+            generating_start_timeout_s=120.0,
             parse_ws_frame=None,
             on_new_chat=ensure_new_chat,
+            after_submit=ensure_active_chat_view,
+            is_generating_started=is_generating_started,
             is_challenge_visible=is_challenge_visible,
         )

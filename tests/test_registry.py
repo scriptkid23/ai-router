@@ -12,3 +12,13 @@ def test_deepseek_adapter_is_available():
     ds = registry.get("deepseek")
     assert ds.status == "available"
     assert ds.name == "DeepSeek"
+
+
+def test_deepseek_profile_supports_search_waits():
+    from ai_router.config import load_config
+
+    registry = build_registry()
+    profile = registry.get("deepseek").build_profile(load_config())
+    assert profile.generating_start_timeout_s == 120.0
+    assert profile.after_submit is not None
+    assert profile.is_generating_started is not None

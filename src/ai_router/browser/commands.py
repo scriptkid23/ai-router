@@ -203,6 +203,9 @@ class CommandExecutor:
             else:
                 await self._try_enter_submit()
             if await self._verify_submitted():
+                hook = self._profile.after_submit
+                if hook is not None:
+                    await hook(self._page)
                 return
             await asyncio.sleep(0.5)
         raise AiRouterError(
@@ -256,11 +259,17 @@ class CommandExecutor:
 
     async def _wait_generating_started(self, timeout_s: float) -> bool:
         deadline = time.monotonic() + timeout_s
+        last_after_submit = 0.0
         while time.monotonic() < deadline:
             if await self._generating_started():
                 return True
             if self._reducer.state.phase == "error":
                 raise self._provider_error()
+            hook = self._profile.after_submit
+            now = time.monotonic()
+            if hook is not None and now - last_after_submit >= 1.0:
+                await hook(self._page)
+                last_after_submit = now
             await asyncio.sleep(0.1)
         return False
 
@@ -270,12 +279,21 @@ class CommandExecutor:
             return True
         if st.submitted_at is None:
             return False
-        return (
-            st.last_stream_at is not None and st.last_stream_at >= st.submitted_at
-        )
+        if st.last_stream_at is not None and st.last_stream_at >= st.submitted_at:
+            return True
+        if st.saw_generating_this_job:
+            return True
+        count, _ = await self._profile.read_response_snapshot(self._page)
+        if count > self._response_count_at_submit:
+            return True
+        hook = self._profile.is_generating_started
+        if hook is not None and await hook(self._page):
+            return True
+        return False
 
     async def _wait_generating(self) -> None:
-        if await self._wait_generating_started(15.0):
+        timeout_s = self._profile.generating_start_timeout_s or 15.0
+        if await self._wait_generating_started(timeout_s):
             return
         input_len = len(await self._input_text())
         raise AiRouterError(

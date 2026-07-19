@@ -1,13 +1,13 @@
 [tool.poetry]
 name = "mcp-ai-router"
-version = "0.1.5"
-description = "Stdio MCP server for Cursor, Claude Code, and other clients — route prompts to Gemini & ChatGPT via browser sessions. pipx install mcp-ai-router"
+version = "0.1.6"
+description = "Stdio MCP server for Cursor, Claude Code, and other clients — route prompts to Gemini, ChatGPT, Claude & DeepSeek via browser sessions. pipx install mcp-ai-router"
 authors = ["Olivier Taylor <olivier.taylor.work@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/scriptkid23/ai-router"
 repository = "https://github.com/scriptkid23/ai-router"
-keywords = ["mcp", "gemini", "chatgpt", "cursor", "claude", "ai"]
+keywords = ["mcp", "gemini", "chatgpt", "claude", "deepseek", "cursor", "ai"]
 packages = [{ include = "ai_router", from = "src" }]
 classifiers = [
   "Programming Language :: Python :: 3",

@@ -32,6 +32,25 @@ SEL_ASSISTANT_TEXT = (
     ".ds-assistant-message-main-content .ds-markdown"
 )
 SEL_LOGIN = 'a[href*="/login"], button:has-text("Log in")'
+SEL_SIDEBAR_CHAT = (
+    'a[href*="/chat/"], '
+    '[class*="sidebar"] a[href], '
+    '[class*="conversation"] a, '
+    'nav a[href*="/chat"]'
+)
+SEL_SEARCH_INDICATOR = (
+    '[class*="search-status"]:visible, '
+    '[class*="searching"]:visible'
+)
+# Composer toggles (DeepThink/Search buttons) also match [class*="think"] /
+# [data-testid*="search"] — never use those for completion detection.
+ACTIVE_GENERATING_MARKERS = (
+    "searching the web",
+    "searching for",
+    "reading pages",
+    "thinking...",
+    "đang tìm",
+)
 SEL_CHALLENGE = (
     'iframe[src*="challenges.cloudflare.com"], '
     'iframe[src*="turnstile"], '
@@ -48,6 +67,8 @@ CHALLENGE_MARKERS = (
     "checking your browser",
     "verify you are human",
 )
+
+GENERATING_BODY_MARKERS = ACTIVE_GENERATING_MARKERS
 
 DEEPSEEK_ERROR_MARKERS = (
     "something went wrong",
