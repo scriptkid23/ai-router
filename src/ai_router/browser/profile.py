@@ -34,7 +34,7 @@ class ProviderProfile:
 
     provider_id: str
     stream_url_re: re.Pattern[str]
-    parse_stream_done: Callable[[int, str], StreamDone]
+    parse_stream_done: Callable[[int, str | bytes], StreamDone]
     is_stop_visible: Callable[[Page], Awaitable[bool]]
     read_response_snapshot: Callable[[Page], Awaitable[tuple[int, str]]]
     is_rate_limited: Callable[[str], bool]
@@ -53,3 +53,4 @@ class ProviderProfile:
     after_submit: Callable[[Page], Awaitable[None]] | None = None
     is_generating_started: Callable[[Page], Awaitable[bool]] | None = None
     is_challenge_visible: Callable[[Page], Awaitable[bool]] | None = None
+    read_response_bytes: bool = False

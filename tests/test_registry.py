@@ -7,6 +7,28 @@ def test_build_registry_includes_deepseek():
     assert "deepseek" in ids
 
 
+def test_build_registry_includes_kimi():
+    registry = build_registry()
+    ids = [a.id for a in registry.list_all()]
+    assert "kimi" in ids
+
+
+def test_kimi_adapter_is_available():
+    registry = build_registry()
+    kimi = registry.get("kimi")
+    assert kimi.status == "available"
+    assert kimi.name == "Kimi"
+
+
+def test_kimi_profile_reads_response_bytes():
+    from ai_router.config import load_config
+
+    registry = build_registry()
+    profile = registry.get("kimi").build_profile(load_config())
+    assert profile.read_response_bytes is True
+    assert profile.answer_timeout_s == 600.0
+
+
 def test_deepseek_adapter_is_available():
     registry = build_registry()
     ds = registry.get("deepseek")

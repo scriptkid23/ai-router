@@ -71,7 +71,10 @@ async def handle_response(
     try:
         await response.finished()
         status = response.status
-        body = await response.text()
+        if profile.read_response_bytes:
+            body = await response.body()
+        else:
+            body = await response.text()
     except Exception as exc:
         trace(
             "stream_response_error",

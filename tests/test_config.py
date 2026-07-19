@@ -60,3 +60,10 @@ def test_load_config_defaults_includes_deepseek(tmp_path):
     assert "deepseek" in cfg.providers
     assert cfg.providers["deepseek"].url == "https://chat.deepseek.com/"
     assert cfg.deepseek_answer_timeout_s == 600.0
+
+
+def test_load_config_defaults_includes_kimi(tmp_path):
+    cfg = load_config(tmp_path / "missing.yaml")
+    assert "kimi" in cfg.providers
+    assert cfg.providers["kimi"].url == "https://www.kimi.com/?chat_enter_method=new_chat"
+    assert cfg.kimi_answer_timeout_s == 600.0
