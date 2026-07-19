@@ -15,7 +15,7 @@ Add a `kimi` provider that automates authenticated Kimi web sessions via Playwri
 | Integration | Browser automation (CloakBrowser) — not direct HTTP API |
 | Answer source | DOM only — `.markdown-container .markdown` (stream is signal-only) |
 | Thinking blocks | Excluded from returned text |
-| Chat lifecycle | New chat per `ask` — navigate + explicit **New Chat** |
+| Chat lifecycle | New chat per `ask` — navigate to `?chat_enter_method=new_chat` |
 | Model/scenario | Use account default; no UI intervention |
 | Stream completion | `MESSAGE_STATUS_COMPLETED` in Connect RPC response body |
 | Auth | Browser session (cookies + `x-msh-*` headers auto-handled by web UI) |
@@ -28,7 +28,7 @@ flowchart LR
     MCP["MCP ask(provider=kimi)"] --> Worker["PageWorker"]
     Worker --> Planner["KimiPlanner"]
     Planner --> Browser["Playwright tab kimi.com"]
-    Browser --> NewChat["Click New Chat + verify empty"]
+    Browser --> NewChat["goto ?chat_enter_method=new_chat + verify empty"]
     Browser --> Connect["Intercept ChatService/Chat"]
     Browser --> DOM["Read .markdown-container .markdown"]
     Connect --> Parser["parse_stream_done"]
@@ -39,8 +39,8 @@ flowchart LR
 
 ### Per-ask flow
 
-1. `goto` → `https://www.kimi.com/`
-2. `new_chat` → click **New Chat** (or equivalent); verify no prior assistant segments
+1. `goto` → `https://www.kimi.com/?chat_enter_method=new_chat` (fresh chat URL)
+2. Verify no prior assistant segments (`.segment-content-box` count == 0)
 3. `wait_idle` → prompt input ready; fail fast if challenge/login UI detected
 4. Snapshot `assistant_count_before` via `read_response_snapshot`
 5. `clear_input` → `type` → `submit`
@@ -228,12 +228,14 @@ Kimi assistant turns render as:
 
 ```python
 KIMI_URL = "https://www.kimi.com/"
+KIMI_NEW_CHAT_URL = "https://www.kimi.com/?chat_enter_method=new_chat"
 
 SEL_NEW_CHAT = (
     'button[aria-label*="New chat" i], '
     'a[aria-label*="New chat" i], '
     'button:has-text("New chat")'
 )
+# SEL_NEW_CHAT is fallback only — prefer KIMI_NEW_CHAT_URL navigation
 SEL_PROMPT_INPUT = (
     'textarea:not([aria-hidden="true"]):visible, '
     'div[contenteditable="true"]:visible'
@@ -328,12 +330,17 @@ FAILURE_STATUSES = frozenset({
 })
 ```
 
+### `ensure_new_chat(page)`
+
+Primary: navigate to `KIMI_NEW_CHAT_URL` and wait for `domcontentloaded`. Verify `assistant_count == 0` via `SEL_ASSISTANT_MAIN`.
+
+Fallback: if assistant segments remain after URL navigation, click `SEL_NEW_CHAT` and re-verify empty session.
+
 ## Planner
 
 ```python
 [
-    Command("goto", {"url": KIMI_URL}),
-    Command("new_chat"),
+    Command("goto", {"url": KIMI_NEW_CHAT_URL}),
     Command("wait_idle"),
     Command("clear_input"),
     Command("type", {"prompt": job.prompt}),
@@ -343,7 +350,7 @@ FAILURE_STATUSES = frozenset({
 ]
 ```
 
-Recovery uses the same script (reload + retry) as ChatGPT, Claude, and DeepSeek.
+`on_new_chat=ensure_new_chat` remains available for recovery reloads. Recovery uses the same script (reload + retry) as ChatGPT, Claude, and DeepSeek.
 
 ## Config & registry
 
@@ -356,7 +363,7 @@ Register `KimiAdapter()` in `build_registry()` alongside Gemini, ChatGPT, Claude
 ```yaml
 providers:
   kimi:
-    url: "https://www.kimi.com/"
+    url: "https://www.kimi.com/?chat_enter_method=new_chat"
 ```
 
 `kimi_answer_timeout_s` in `AppConfig`. Default **`600.0`**; YAML/env overrides supported.
@@ -365,7 +372,7 @@ Environment variable: `AI_ROUTER_KIMI_ANSWER_TIMEOUT_S`.
 
 ## Session / login
 
-- `check_session`: navigate to `https://www.kimi.com/`, wait for `SEL_PROMPT_INPUT` → `LOGGED_IN`
+- `check_session`: navigate to `KIMI_NEW_CHAT_URL`, wait for `SEL_PROMPT_INPUT` → `LOGGED_IN`
 - `SEL_LOGIN` visible → `LOGGED_OUT`
 - `SEL_CHALLENGE` visible → `UNKNOWN`
 - Timeout without any → `UNKNOWN`
@@ -399,9 +406,9 @@ Unit tests only (no live browser required):
 
 ### `tests/test_kimi_planner.py`
 
-- Plan includes `goto` to `kimi.com`
-- Plan includes `new_chat` before submit
-- Core command sequence: new_chat → clear → type → submit → wait
+- Plan includes `goto` to `KIMI_NEW_CHAT_URL`
+- Plan does **not** need a separate `new_chat` command (URL handles fresh session)
+- Core command sequence: goto → wait_idle → clear → type → submit → wait
 
 ### Other updates
 
@@ -441,7 +448,7 @@ Incorporated feedback from Gemini, ChatGPT, and DeepSeek parallel review, plus c
 | P0 | Confirmed DOM selectors: `.segment-content-box` + `.markdown-container .markdown` |
 | P0 | Strip `.table-actions` UI chrome before text extraction |
 | P1 | Default timeout 600s for thinking mode |
-| P1 | Explicit **New Chat** step per ask |
+| P1 | Fresh chat via `?chat_enter_method=new_chat` URL (click New Chat as fallback) |
 | P2 | Substring fallback if frame parser yields zero messages |
 | P2 | Document shared StateReducer hybrid gate |
 
