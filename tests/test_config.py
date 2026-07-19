@@ -53,3 +53,10 @@ def test_parallel_ask_from_yaml(tmp_path):
     cfg = load_config(p)
     assert cfg.parallel_default_providers == ["gemini", "chatgpt"]
     assert cfg.parallel_default_strategy == "longest"
+
+
+def test_load_config_defaults_includes_deepseek(tmp_path):
+    cfg = load_config(tmp_path / "missing.yaml")
+    assert "deepseek" in cfg.providers
+    assert cfg.providers["deepseek"].url == "https://chat.deepseek.com/"
+    assert cfg.deepseek_answer_timeout_s == 600.0

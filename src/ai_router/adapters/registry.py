@@ -26,10 +26,12 @@ class ProviderRegistry:
 
 def build_registry() -> ProviderRegistry:
     from ai_router.adapters.claude.adapter import ClaudeAdapter
+    from ai_router.adapters.deepseek.adapter import DeepSeekAdapter
     from ai_router.adapters.gemini.adapter import GeminiAdapter
 
     registry = ProviderRegistry()
     registry.register(GeminiAdapter())
     registry.register(ChatGPTAdapter())
     registry.register(ClaudeAdapter())
+    registry.register(DeepSeekAdapter())
     return registry

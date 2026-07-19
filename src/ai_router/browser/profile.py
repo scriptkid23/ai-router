@@ -47,3 +47,5 @@ class ProviderProfile:
     # Optional second completion source: providers that stream the turn over a
     # WebSocket (e.g. ChatGPT conduit) return a verdict per frame; None = skip.
     parse_ws_frame: Callable[[str], StreamDone | None] | None = None
+    on_new_chat: Callable[[Page], Awaitable[None]] | None = None
+    is_challenge_visible: Callable[[Page], Awaitable[bool]] | None = None

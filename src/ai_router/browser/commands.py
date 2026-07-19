@@ -20,6 +20,7 @@ CommandOp = Literal[
     "wait_generating",
     "wait_answer",
     "goto",
+    "new_chat",
 ]
 
 
@@ -68,7 +69,16 @@ class CommandExecutor:
                 op=cmd.op,
                 phase=self._reducer.state.phase,
             )
-            if cmd.op == "wait_idle":
+            if cmd.op == "new_chat":
+                hook = self._profile.on_new_chat
+                if hook is None:
+                    raise AiRouterError(
+                        "ADAPTER_ERROR",
+                        f"Provider {self._profile.provider_id} has no new_chat handler",
+                    )
+                await hook(self._page)
+                before_count, _ = await self._profile.read_response_snapshot(self._page)
+            elif cmd.op == "wait_idle":
                 await self._wait_idle()
             elif cmd.op == "clear_input":
                 await self._clear_input()
@@ -341,6 +351,13 @@ class CommandExecutor:
     async def _wait_idle(self) -> None:
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
+            challenge = self._profile.is_challenge_visible
+            if challenge is not None and await challenge(self._page):
+                prefix = self._profile.provider_id.upper()
+                raise AiRouterError(
+                    f"{prefix}_ERROR",
+                    "Challenge or verification page detected",
+                )
             st = self._reducer.state
             stop_visible = await self._profile.is_stop_visible(self._page)
             if (
