@@ -44,6 +44,12 @@ class ProviderProfile:
     error_markers: tuple[str, ...]
     recoverable_codes: tuple[str, ...]
     answer_timeout_s: float | None = None
+    # How long wait_generating waits for the first generation signal after submit.
+    generating_start_timeout_s: float | None = None
     # Optional second completion source: providers that stream the turn over a
     # WebSocket (e.g. ChatGPT conduit) return a verdict per frame; None = skip.
     parse_ws_frame: Callable[[str], StreamDone | None] | None = None
+    on_new_chat: Callable[[Page], Awaitable[None]] | None = None
+    after_submit: Callable[[Page], Awaitable[None]] | None = None
+    is_generating_started: Callable[[Page], Awaitable[bool]] | None = None
+    is_challenge_visible: Callable[[Page], Awaitable[bool]] | None = None
