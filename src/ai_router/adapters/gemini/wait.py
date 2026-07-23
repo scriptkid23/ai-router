@@ -1,21 +1,115 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from playwright.async_api import Page
 
 from ai_router.adapters.gemini.selectors import (
     RATE_LIMIT_MARKERS,
-    SEL_GENERATING,
+    SEL_PROMPT_INPUT,
     SEL_RESPONSE_BLOCK,
     SEL_RESPONSE_INNER,
     SEL_RESPONSE_TEXT,
     SEL_SEND_CONTAINER,
 )
 from ai_router.browser.profile import StreamDone
+from ai_router.errors import AiRouterError
+from ai_router.logger import trace
 
 # Gemini StreamGenerate end-of-turn marker: ["e", ...]
 STREAM_END_RE = re.compile(r'\[\s*"e"\s*,', re.I)
+
+_FIND_EDITOR_BODY = """
+    const selectors = [
+        '[data-test-id="textarea-inner"] .ql-editor[role="textbox"]',
+        '.ql-editor.textarea[contenteditable="true"][role="textbox"]',
+        'rich-textarea .ql-editor[contenteditable="true"][role="textbox"]',
+        'div.ql-editor[contenteditable="true"][role="textbox"]',
+    ];
+    let el = null;
+    for (const sel of selectors) {
+        el = document.querySelector(sel);
+        if (el) break;
+    }
+"""
+
+_QUILL_CLEAR_JS = (
+    """() => {"""
+    + _FIND_EDITOR_BODY
+    + """
+    if (!el) return { ok: false, reason: 'no_editor' };
+    el.focus();
+    const sel = window.getSelection();
+    if (sel) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+    document.execCommand('selectAll', false, null);
+    document.execCommand('delete', false, null);
+    el.classList.add('ql-blank');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return { ok: true };
+}"""
+)
+
+_QUILL_TYPE_JS = (
+    """(text) => {"""
+    + _FIND_EDITOR_BODY
+    + """
+    if (!el) return { ok: false, reason: 'no_editor', text: '' };
+    el.focus();
+    el.classList.remove('ql-blank');
+    const sel = window.getSelection();
+    if (sel) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+    document.execCommand('selectAll', false, null);
+    document.execCommand('delete', false, null);
+    let ok = document.execCommand('insertText', false, text);
+    if (!ok) {
+        let p = el.querySelector('p');
+        if (!p) {
+            p = document.createElement('p');
+            el.appendChild(p);
+        }
+        p.textContent = text;
+        ok = true;
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        inputType: 'insertText',
+        data: text,
+    }));
+    const written = (el.innerText || el.textContent || '').trim();
+    return { ok: ok && written.length > 0, text: written };
+}"""
+)
+
+_IS_GENERATING_JS = """() => {
+    const containers = document.querySelectorAll(
+        'div.send-button-container.visible, div[data-test-id="send-button-container"].visible'
+    );
+    for (const container of containers) {
+        const stopIcon = container.querySelector('gem-icon-button.stop');
+        if (stopIcon && stopIcon.getAttribute('aria-disabled') !== 'true') {
+            return true;
+        }
+        const btn = container.querySelector('button');
+        if (!btn || btn.disabled) continue;
+        const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+        if (label.includes('stop') || label.includes('dừng')) {
+            return true;
+        }
+    }
+    return false;
+}"""
 
 
 def braces_balanced(text: str) -> bool:
@@ -75,42 +169,67 @@ def parse_stream_done(status: int, body: str) -> StreamDone:
     return StreamDone(done=False, ok=False)
 
 
+async def _wait_prompt_input(page: Page) -> None:
+    await page.wait_for_selector(SEL_PROMPT_INPUT, state="visible", timeout=15_000)
+
+
+async def clear_prompt(page: Page) -> None:
+    """Clear Gemini's Quill editor via execCommand (keyboard shortcuts fail)."""
+    await _wait_prompt_input(page)
+    result = await page.evaluate(_QUILL_CLEAR_JS)
+    if not result.get("ok"):
+        raise AiRouterError("ADAPTER_ERROR", "Gemini prompt input not found")
+
+
+async def type_prompt(page: Page, prompt: str) -> None:
+    """Insert text into Gemini's Quill editor and fire the input events Send needs."""
+    await _wait_prompt_input(page)
+    result = await page.evaluate(_QUILL_TYPE_JS, prompt)
+    trace(
+        "gemini_type_result",
+        ok=result.get("ok"),
+        written_len=len(result.get("text", "")),
+        preview=(result.get("text") or "")[:40],
+    )
+    if not result.get("ok"):
+        raise AiRouterError(
+            "ADAPTER_ERROR",
+            f"Failed to type into Gemini input ({result.get('reason', 'empty')})",
+        )
+    await asyncio.sleep(0.2)
+
+
 async def send_button_ready(page: Page) -> bool:
     """True when Gemini's Send control is present and enabled."""
-    container = page.locator(SEL_SEND_CONTAINER).last
-    if await container.count() == 0:
-        return False
-    wrapper = container.locator("gem-icon-button.send-button.submit").first
-    if await wrapper.count() > 0:
-        return await wrapper.get_attribute("aria-disabled") != "true"
-    submit = container.locator('button[aria-label="Send message"]').first
-    if await submit.count() == 0:
-        return False
-    return not await submit.is_disabled()
+    for container_sel in (
+        "div.send-button-container.visible",
+        'div[data-test-id="send-button-container"].visible',
+        ".input-buttons-wrapper-bottom",
+        ".trailing-actions-wrapper",
+    ):
+        container = page.locator(container_sel).last
+        if await container.count() == 0:
+            continue
+        wrapper = container.locator("gem-icon-button.send-button.submit").first
+        if await wrapper.count() > 0:
+            if await wrapper.get_attribute("aria-disabled") != "true":
+                return True
+        for label in ("Send message", "Gửi"):
+            submit = container.locator(f'button[aria-label="{label}"]').first
+            if await submit.count() > 0 and not await submit.is_disabled():
+                return True
+        submit = container.locator('button[aria-label*="Send" i]').first
+        if await submit.count() > 0 and not await submit.is_disabled():
+            label = (await submit.get_attribute("aria-label") or "").lower()
+            if "stop" not in label and "dừng" not in label:
+                return True
+    return False
 
 
 async def is_stop_visible(page: Page) -> bool:
-    """True while Gemini is still generating (Stop/Pause control visible)."""
-    if await page.locator(SEL_GENERATING).count() > 0:
-        return True
+    """True while Gemini is still generating (Stop control in the send area)."""
     try:
-        return bool(
-            await page.evaluate(
-                """() => {
-                    const sel = [
-                        'div.send-button-container.visible',
-                        'div[data-test-id="send-button-container"].visible',
-                    ].join(',');
-                    const container = document.querySelector(sel);
-                    if (!container) return false;
-                    if (container.querySelector('gem-icon-button.stop')) return true;
-                    const btn = container.querySelector('button');
-                    if (!btn) return false;
-                    const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-                    return label.includes('stop') || label.includes('dừng');
-                }"""
-            )
-        )
+        return bool(await page.evaluate(_IS_GENERATING_JS))
     except Exception:
         container = page.locator(SEL_SEND_CONTAINER).last
         if await container.count() == 0:

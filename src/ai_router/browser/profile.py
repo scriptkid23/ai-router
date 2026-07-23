@@ -54,3 +54,6 @@ class ProviderProfile:
     is_generating_started: Callable[[Page], Awaitable[bool]] | None = None
     is_challenge_visible: Callable[[Page], Awaitable[bool]] | None = None
     read_response_bytes: bool = False
+    # Optional Quill/contenteditable hooks — keyboard.insert_text is unreliable.
+    type_prompt: Callable[[Page, str], Awaitable[None]] | None = None
+    clear_prompt: Callable[[Page], Awaitable[None]] | None = None

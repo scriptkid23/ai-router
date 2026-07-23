@@ -13,11 +13,13 @@ from ai_router.adapters.gemini.selectors import (
     STREAM_GENERATE_RE,
 )
 from ai_router.adapters.gemini.wait import (
+    clear_prompt,
     is_rate_limited,
     is_stop_visible,
     parse_stream_done,
     read_response_snapshot,
     send_button_ready,
+    type_prompt,
 )
 from ai_router.browser.profile import ProviderProfile, ProviderSelectors
 from ai_router.config import AppConfig
@@ -63,4 +65,6 @@ class GeminiAdapter:
             error_markers=GEMINI_ERROR_MARKERS,
             recoverable_codes=("GEMINI_ERROR",),
             answer_timeout_s=None,
+            type_prompt=type_prompt,
+            clear_prompt=clear_prompt,
         )

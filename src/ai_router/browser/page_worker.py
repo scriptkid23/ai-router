@@ -190,7 +190,10 @@ class PageWorker:
 
     async def _wait_idle_gate(self) -> None:
         last_log = 0.0
-        deadline = time.monotonic() + _IDLE_GATE_TIMEOUT_S
+        queued = self._queue.depth() > 0
+        # Don't block a queued ask for the full 120s when the reducer is wedged.
+        timeout_s = 20.0 if queued and self._running_job_id is None else _IDLE_GATE_TIMEOUT_S
+        deadline = time.monotonic() + timeout_s
         while True:
             st = self._reducer.state
             stop_visible = await self._stop_visible()
@@ -223,6 +226,7 @@ class PageWorker:
                     idle_streak=st.idle_streak,
                     queue_depth=self._queue.depth(),
                     stop_visible=stop_visible,
+                    timeout_s=timeout_s,
                 )
                 self._reducer.reset_job_cycle()
                 return
