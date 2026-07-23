@@ -101,6 +101,7 @@ def adapters(monkeypatch):
         "chatgpt": FakeAdapter("chatgpt"),
         "claude": FakeAdapter("claude"),
         "deepseek": FakeAdapter("deepseek"),
+        "kimi": FakeAdapter("kimi"),
     }
 
     def fake_resolve(registry, provider, default):
@@ -135,6 +136,7 @@ async def test_default_providers_are_all_available(state, adapters) -> None:
         "claude",
         "deepseek",
         "gemini",
+        "kimi",
     ]
 
 

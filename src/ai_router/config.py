@@ -34,6 +34,7 @@ class AppConfig:
     chatgpt_answer_timeout_s: float = 300.0
     claude_answer_timeout_s: float = 300.0
     deepseek_answer_timeout_s: float = 600.0
+    kimi_answer_timeout_s: float = 600.0
     max_pages: int = 10
     # ask_multi fan-out defaults; empty list = all "available" providers
     parallel_default_providers: list[str] = field(default_factory=list)
@@ -57,6 +58,9 @@ def _defaults() -> AppConfig:
             "chatgpt": ProviderConfig(url="https://chatgpt.com/"),
             "claude": ProviderConfig(url="https://claude.ai/new"),
             "deepseek": ProviderConfig(url="https://chat.deepseek.com/"),
+            "kimi": ProviderConfig(
+                url="https://www.kimi.com/?chat_enter_method=new_chat"
+            ),
         },
     )
 
@@ -84,6 +88,8 @@ def load_config(path: Path | None = None) -> AppConfig:
             cfg.claude_answer_timeout_s = float(raw["claude_answer_timeout_s"])
         if "deepseek_answer_timeout_s" in raw:
             cfg.deepseek_answer_timeout_s = float(raw["deepseek_answer_timeout_s"])
+        if "kimi_answer_timeout_s" in raw:
+            cfg.kimi_answer_timeout_s = float(raw["kimi_answer_timeout_s"])
         if "providers" in raw:
             for pid, pdata in raw["providers"].items():
                 cfg.providers[pid] = ProviderConfig(url=pdata["url"])
@@ -114,5 +120,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         cfg.claude_answer_timeout_s = float(v)
     if v := os.getenv("AI_ROUTER_DEEPSEEK_ANSWER_TIMEOUT_S"):
         cfg.deepseek_answer_timeout_s = float(v)
+    if v := os.getenv("AI_ROUTER_KIMI_ANSWER_TIMEOUT_S"):
+        cfg.kimi_answer_timeout_s = float(v)
 
     return cfg

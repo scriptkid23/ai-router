@@ -2,7 +2,7 @@
 
 AI Router is a Python stdio MCP server. Install the **`mcp-ai-router`** package from PyPI, run the **`ai-router`** CLI, and connect any MCP client with `"command": "ai-router"` and `"args": ["serve"]`.
 
-It automates authenticated **Gemini**, **ChatGPT**, **Claude**, and **DeepSeek** web sessions through CloakBrowser — **no API keys**, but you do need provider web accounts and a one-time CLI login.
+It automates authenticated **Gemini**, **ChatGPT**, **Claude**, **DeepSeek**, and **Kimi** web sessions through CloakBrowser — **no API keys**, but you do need provider web accounts and a one-time CLI login.
 
 | | Name |
 |---|------|
@@ -15,7 +15,7 @@ It automates authenticated **Gemini**, **ChatGPT**, **Claude**, and **DeepSeek**
 ```bash
 pipx install mcp-ai-router          # 1. install
 ai-router browser login             # 2. log in (opens browser windows)
-ai-router browser status            # 3. expect gemini/chatgpt/claude/deepseek: logged_in
+ai-router browser status            # 3. expect gemini/chatgpt/claude/deepseek/kimi: logged_in
 ```
 
 Add MCP config (see [Connect MCP client](#connect-mcp-client)), reload your client, then verify:
@@ -32,7 +32,7 @@ Add MCP config (see [Connect MCP client](#connect-mcp-client)), reload your clie
 
 Tested on **macOS**, **Linux**, and **Windows**. No Poetry, Node.js, or repo clone required for normal stdio MCP use.
 
-**Provider accounts:** valid Gemini, ChatGPT, Claude, and/or DeepSeek web accounts (free tiers work). Login is manual via the browser UI.
+**Provider accounts:** valid Gemini, ChatGPT, Claude, DeepSeek, and/or Kimi web accounts (free tiers work). Login is manual via the browser UI.
 
 ## Install
 
@@ -74,6 +74,7 @@ ai-router browser login --provider gemini
 ai-router browser login --provider chatgpt
 ai-router browser login --provider claude
 ai-router browser login --provider deepseek
+ai-router browser login --provider kimi
 ```
 
 1. Visible browser windows open (one per provider being configured).
@@ -157,7 +158,7 @@ Reload MCP in your client after saving.
 
 | Tool | Description |
 |------|-------------|
-| `ask(prompt, provider?)` | Send a prompt; default provider is Gemini. Set `provider` to `"chatgpt"`, `"claude"`, or `"deepseek"`. |
+| `ask(prompt, provider?)` | Send a prompt; default provider is Gemini. Set `provider` to `"chatgpt"`, `"claude"`, `"deepseek"`, or `"kimi"`. |
 | `ask_multi(prompt, providers?, strategy?)` | Fan out to multiple providers in parallel (`strategy`: `all`, `first`, `longest`). |
 | `list_providers()` | List providers and status. |
 | `session_status(provider?)` | Check login state without opening a chat. |
@@ -173,8 +174,8 @@ Login is **CLI only** — run `ai-router browser login` manually; there is no MC
 ```bash
 ai-router --version
 ai-router serve [--transport stdio|http] [--host 127.0.0.1] [--port 8087]
-ai-router browser login [--provider gemini|chatgpt|claude|deepseek]
-ai-router browser status [--provider gemini|chatgpt|claude|deepseek]
+ai-router browser login [--provider gemini|chatgpt|claude|deepseek|kimi]
+ai-router browser status [--provider gemini|chatgpt|claude|deepseek|kimi]
 ```
 
 | Transport | Use case |
@@ -201,6 +202,8 @@ providers:
     url: https://claude.ai/new
   deepseek:
     url: https://chat.deepseek.com/
+  kimi:
+    url: https://www.kimi.com/?chat_enter_method=new_chat
 ```
 
 Precedence: environment variables override YAML; YAML overrides defaults.
@@ -213,6 +216,7 @@ Precedence: environment variables override YAML; YAML overrides defaults.
 | `AI_ROUTER_PORT` | `8087` | HTTP port |
 | `AI_ROUTER_ANSWER_TIMEOUT_S` | `120` | Per-request timeout (seconds) |
 | `AI_ROUTER_DEEPSEEK_ANSWER_TIMEOUT_S` | `600` | DeepSeek per-request timeout (seconds; supports long thinking runs) |
+| `AI_ROUTER_KIMI_ANSWER_TIMEOUT_S` | `600` | Kimi per-request timeout (seconds; supports long thinking runs) |
 
 ## Troubleshooting
 
@@ -272,7 +276,7 @@ ai-router --help && ai-router --version && ai-router browser status
 
 ## Security
 
-- Prompts are sent to Gemini, ChatGPT, Claude, and DeepSeek **web UIs** — provider privacy and terms apply. Review each provider's terms; web automation may violate some account policies.
+- Prompts are sent to Gemini, ChatGPT, Claude, DeepSeek, and Kimi **web UIs** — provider privacy and terms apply. Review each provider's terms; web automation may violate some account policies.
 - `~/.ai-router/profile/` holds live session cookies — treat like a password. Deleting it logs you out locally.
 - Logs may be written to `~/.ai-router/logs/` and stderr.
 - HTTP debug mode binds to `127.0.0.1` with no auth — localhost only.

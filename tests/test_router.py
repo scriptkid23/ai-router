@@ -3,6 +3,7 @@ import pytest
 from ai_router.adapters.chatgpt.adapter import ChatGPTAdapter
 from ai_router.adapters.claude.adapter import ClaudeAdapter
 from ai_router.adapters.deepseek.adapter import DeepSeekAdapter
+from ai_router.adapters.kimi.adapter import KimiAdapter
 from ai_router.adapters.registry import ProviderRegistry
 from ai_router.errors import AiRouterError
 from ai_router.router.resolve import resolve_provider
@@ -42,4 +43,13 @@ def test_resolve_deepseek_provider():
     )
     adapter, reason = resolve_provider(registry, "deepseek", default="gemini")
     assert adapter.id == "deepseek"
+    assert reason == "explicit param"
+
+
+def test_resolve_kimi_provider():
+    registry = ProviderRegistry(
+        [_FakeGemini(), ChatGPTAdapter(), ClaudeAdapter(), DeepSeekAdapter(), KimiAdapter()]
+    )
+    adapter, reason = resolve_provider(registry, "kimi", default="gemini")
+    assert adapter.id == "kimi"
     assert reason == "explicit param"

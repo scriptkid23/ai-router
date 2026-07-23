@@ -128,12 +128,30 @@ class CommandExecutor:
         return AiRouterError(code, st.error_text or "Provider error")
 
     async def _clear_input(self) -> None:
+        hook = self._profile.clear_prompt
+        if hook is not None:
+            await hook(self._page)
+            return
         box = self._page.locator(self._profile.selectors.prompt_input).first
         await box.click()
         await self._page.keyboard.press("Control+A")
         await self._page.keyboard.press("Backspace")
 
     async def _type(self, prompt: str) -> None:
+        hook = self._profile.type_prompt
+        if hook is not None:
+            trace(
+                "cmd_type",
+                page_id=self._page_id,
+                job_id=self._job_id,
+                prompt_len=len(prompt),
+                prompt_preview=prompt[:60],
+                phase=self._reducer.state.phase,
+                method="hook",
+            )
+            await hook(self._page, prompt)
+            self._last_prompt_len = len(prompt)
+            return
         box = self._page.locator(self._profile.selectors.prompt_input).first
         await box.click()
         trace(
